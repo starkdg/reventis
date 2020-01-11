@@ -75,7 +75,7 @@ int main(int argc, char **argv){
 		cout << "(" << count << ") " << e.descr << " " << e.date << " "
 			 << e.starttime << " " << " to " << e.date << " " << e.endtime
 			 << " " << e.longitude << "/" << e.latitude << endl;
-		reply = (redisReply*)redisCommand(c, "devantix.insert %s %f %f %s %s %s %s %s",
+		reply = (redisReply*)redisCommand(c, "reventis.insert %s %f %f %s %s %s %s %s",
 							 tree.c_str(), e.longitude, e.latitude,
 										  e.date.c_str(), e.starttime.c_str(),
 										  e.date.c_str(), e.endtime.c_str(), e.descr.c_str());

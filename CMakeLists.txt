@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.0)
 project(reventis-redis)
 include(ExternalProject)
 
-set(MODULE_SRCS rbtree_redis.cpp spfc.cpp)
+set(MODULE_SRCS rbtree_redis_ndt.cpp spfc.cpp)
 set(CMAKE_INSTALL_PREFIX /var/local)
 
 add_library(reventis MODULE ${MODULE_SRCS})
