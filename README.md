@@ -44,6 +44,7 @@ reventis.query myevents  <longitude range> <latitude range> <time-range>
 reventis.lookup myevents longitude latitude start-time end-time
 reventis.delete myevents longitude latitude date-start time-start event-id
 reventis.purge myevents date time
+reventis.delblk myevents <longitude-range> <latitude-range> <time-range>
 reventis.print myevents
 reventis.clear myevents
 reventis.size myevents
