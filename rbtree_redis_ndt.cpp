@@ -25,17 +25,22 @@ static RedisModuleType *RBTreeType;
 
 /* value struct for nodes */
 typedef struct value_t {
+	double x, y;
 	long long id;
 	time_t start, end;
 	RedisModuleString *descr;
 	value_t(){}
 	value_t(const value_t &other){
+		x = other.x;
+		y = other.y;
 		id = other.id;
 		start = other.start;
 		end = other.end;
 		descr = RedisModule_CreateStringFromString(NULL, other.descr);
 	}
 	value_t& operator=(const value_t &other){
+		x = other.x;
+		y = other.y;
 		id = other.id;
 		start = other.start;
 		end = other.end;
@@ -52,6 +57,8 @@ typedef struct result_t {
 	RedisModuleString *descr;
 	result_t(){}
 	result_t(const result_t &other){
+		x = other.x;
+		y = other.y;
 		s = other.s;
 		id = other.id;
 		start = other.start;
@@ -89,20 +96,23 @@ bool IsRed(RBNode *h){
 RBTree* GetRBTree(RedisModuleCtx *ctx, RedisModuleString *keystr){
 	RedisModuleKey *key = (RedisModuleKey*)RedisModule_OpenKey(ctx, keystr, REDISMODULE_READ);
 	int keytype = RedisModule_KeyType(key);
-	if (RedisModule_ModuleTypeGetType(key) != RBTreeType){
+	if (keytype == REDISMODULE_KEYTYPE_EMPTY)
 		return NULL;
-	}
+	
+	if (RedisModule_ModuleTypeGetType(key) != RBTreeType)
+		throw -1;
 
 	RBTree *tree = static_cast<RBTree*>(RedisModule_ModuleTypeGetValue(key));
+
 	return tree;
 }
 
 RBTree* CreateRBTree(RedisModuleCtx *ctx, RedisModuleString *keystr){
 	RedisModuleKey *key = (RedisModuleKey*)RedisModule_OpenKey(ctx, keystr, REDISMODULE_WRITE);
 	int keytype = RedisModule_KeyType(key);
-	if (keytype != REDISMODULE_KEYTYPE_EMPTY && RedisModule_ModuleTypeGetType(key) != RBTreeType){
-		return NULL;
-	}
+	if (keytype != REDISMODULE_KEYTYPE_EMPTY && RedisModule_ModuleTypeGetType(key) != RBTreeType)
+		throw -1;
+
 	RBTree *tree = NULL;
 	if (keytype == REDISMODULE_KEYTYPE_EMPTY){
 		tree = static_cast<RBTree*>(RedisModule_Calloc(1, sizeof(RBTree)));
@@ -110,6 +120,7 @@ RBTree* CreateRBTree(RedisModuleCtx *ctx, RedisModuleString *keystr){
 	} else {
 		tree = static_cast<RBTree*>(RedisModule_ModuleTypeGetValue(key));
 	}
+	
 	return tree;
 }
 
@@ -204,27 +215,29 @@ RBNode* delete_key(RBNode *node, Seqn s, long long id, int level = 0){
 		if (node->left != NULL && !IsRed(node->left) && !IsRed(node->left->left)){
 			node = MoveRedLeft(node);
 		}
-		node->left = delete_key(ctx, node->left, s, id, level+1);
+		node->left = delete_key(node->left, s, id, level+1);
 	} else {
 		if (IsRed(node->left)) node = RotateRight(node);
 			
-		if (id == node->val.id && node->right == NULL){
+		if (cmpseqnums(s, node->s) == 0 && id == node->val.id && node->right == NULL){
 			RedisModule_Free(node);
 			return NULL;
 		}
 
 		if (node->right != NULL && !IsRed(node->right) && !IsRed(node->right->left))
 			node = MoveRedRight(node);
-			
-		if (id == node->val.id){
-			RBNode *xnode = minimum(node->right);
-			node->s = xnode->s;
-			node->val = xnode->val;
-			node->maxseqn = node->right->maxseqn;
-			node->right = delete_min(node->right);
-			node->count = 1 + GetNodeCount(node->left) + GetNodeCount(node->right);
+
+		if (cmpseqnums(s, node->s) == 0){
+			if (id == node->val.id){
+				RBNode *xnode = minimum(node->right);
+				node->s = xnode->s;
+				node->val = xnode->val;
+				node->maxseqn = node->right->maxseqn;
+				node->right = delete_min(node->right);
+				node->count = 1 + GetNodeCount(node->left) + GetNodeCount(node->right);
+			}
 		} else {
-			node->right = delete_key(ctx, node->right, s, id, level+1);
+			node->right = delete_key(node->right, s, id, level+1);
 		}
 	}
 	return balance(node);
@@ -237,7 +250,7 @@ int RBTreeDelete(RBTree *tree, Seqn s, long long eventid){
 	if (!IsRed(tree->root->left) && !IsRed(tree->root->right))
 		tree->root->red = true;
 
-	tree->root = delete_key(ctx, tree->root, s, eventid);
+	tree->root = delete_key(tree->root, s, eventid);
 	
 	if (tree->root != NULL)
 		tree->root->red = false;
@@ -293,14 +306,16 @@ int RBTreeInsert(RBTree *tree, Seqn s, Value val){
 	return 0;
 }
 
-
+/* in-order travsal */
 void print_tree(RedisModuleCtx *ctx, RBNode *node, int level = 0){
 	if (node == NULL) return;
 
-	Point p;
-	spfc_decode(node->s, p);
-	double x = (double)p.arr[0]/(double)LONG_LAT_SCALE_FACTOR - 180.0;
-	double y = (double)p.arr[1]/(double)LONG_LAT_SCALE_FACTOR - 90.0;
+	// print left 
+	print_tree(ctx, node->left, level+1);
+
+	// print node 
+	double x = node->val.x;
+	double y = node->val.y;
 
 	char scratch[64];
 	strftime(scratch, 64, datetime_fmt, localtime(&(node->val.start)));
@@ -308,8 +323,8 @@ void print_tree(RedisModuleCtx *ctx, RBNode *node, int level = 0){
 	RedisModule_Log(ctx, "info", "print (level %d) %s %.6f/%.6f id=%lld %s red=%d", level,
 					RedisModule_StringPtrLen(node->val.descr, NULL), x, y,
 					node->val.id, scratch, node->red);
-	
-	print_tree(ctx, node->left, level+1);
+
+	// print right 
 	print_tree(ctx, node->right, level+1);
 }
 
@@ -339,8 +354,8 @@ int rbtree_query(RBNode *node, const Region qr, Seqn &next, vector<Result> &resu
 
 		Result res;
 		res.s = node->s;
-		res.x = (double)p.arr[0]/(double)LONG_LAT_SCALE_FACTOR - 180.0;
-		res.y = (double)p.arr[1]/(double)LONG_LAT_SCALE_FACTOR - 90.0;
+		res.x = node->val.x;
+		res.y = node->val.y;
 		res.start = node->val.start;
 		res.end = node->val.end;
 		res.id = node->val.id;
@@ -591,6 +606,8 @@ extern "C" int RBTreeInsert_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **ar
 	pnt.arr[2] = static_cast<uint32_t>(t1);
 
 	Value val;
+	val.x = x;
+	val.y = y;
 	val.id = event_id;
 	val.start = t1;
 	val.end = t2;
@@ -604,14 +621,13 @@ extern "C" int RBTreeInsert_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **ar
 	RedisModule_Log(ctx, "debug", "id = %lld, %.6f/%.6f %s", val.id, x, y,
 					RedisModule_StringPtrLen(val.descr, NULL));
 
-	RBTree *tree = GetRBTree(ctx, keystr);
-	if (tree == NULL){
-		RedisModule_Log(ctx, "debug", "create new type");
-		tree = CreateRBTree(ctx, keystr);
-		if (tree == NULL){
-			RedisModule_ReplyWithError(ctx, "unable to get datatype");
-			return REDISMODULE_ERR;
-		}
+	RBTree *tree = NULL;
+	try {
+		tree = GetRBTree(ctx, keystr);
+		if (tree == NULL) tree = CreateRBTree(ctx, keystr);
+	} catch (int &e){
+		RedisModule_ReplyWithError(ctx, "key already exists; must delete first");
+		return REDISMODULE_OK;
 	}
 	
 	if (RBTreeInsert(tree, s, val) < 0){
@@ -620,8 +636,7 @@ extern "C" int RBTreeInsert_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **ar
 	}
 	RedisModule_ReplyWithLongLong(ctx, event_id);
 
-
-	/* replicate command with eventid */
+	/* replicate command with eventid tacked on as last argument */
 	int r = RedisModule_Replicate(ctx, "reventis.insert", "ssssssssl",
 								  keystr, longitudestr, latitudestr,
 								  startdatestr, starttimestr, enddatestr, endtimestr,
@@ -664,9 +679,15 @@ int RBTreeDelete_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int arg
 		return REDISMODULE_OK;
 	}
 	
-	RBTree *tree = GetRBTree(ctx, keystr);
-	if (tree == NULL){
-		RedisModule_ReplyWithError(ctx, "no data");
+	RBTree *tree = NULL;
+	try {
+		tree = GetRBTree(ctx, keystr);
+		if (tree == NULL){
+			RedisModule_ReplyWithError(ctx, "EMPTY");
+			return REDISMODULE_OK;
+		}
+	} catch (int &e){
+		RedisModule_ReplyWithError(ctx, "key already exists; must delete first");
 		return REDISMODULE_OK;
 	}
 
@@ -714,9 +735,15 @@ int RBTreePurge_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc
 	qr.upper[0] = qr.upper[1] = numeric_limits<uint32_t>::max();
 	qr.upper[2] = static_cast<uint32_t>(t);
 
-	RBTree *tree = GetRBTree(ctx, keystr);
-	if (tree == NULL){
-		RedisModule_ReplyWithError(ctx, "no matching data for key");
+	RBTree *tree = NULL;
+	try {
+		tree = GetRBTree(ctx, keystr);
+		if (tree == NULL){
+			RedisModule_ReplyWithError(ctx, "no such key");
+			return REDISMODULE_OK;
+		}
+	} catch (int &e){
+		RedisModule_ReplyWithError(ctx, "key already exists of different type data");
 		return REDISMODULE_OK;
 	}
 
@@ -774,9 +801,15 @@ int RBTreeDelBlk_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int arg
 		return REDISMODULE_OK;
 	}
 
-	RBTree *tree = GetRBTree(ctx, keystr);
-	if (tree == NULL){
-		RedisModule_ReplyWithError(ctx, "no key found");
+	RBTree *tree = NULL;
+	try {
+		tree = GetRBTree(ctx, keystr);
+		if (tree == NULL){
+			RedisModule_ReplyWithError(ctx, "no such key");
+			return REDISMODULE_OK;
+		}
+	} catch (int &e){
+		RedisModule_ReplyWithError(ctx, "key already exists of different type");
 		return REDISMODULE_OK;
 	}
 	
@@ -840,9 +873,15 @@ int RBTreeQuery_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc
 		return REDISMODULE_OK;
 	}
 
-	RBTree *tree = GetRBTree(ctx, keystr);
-	if (tree == NULL){
-		RedisModule_ReplyWithError(ctx, "no key found");
+	RBTree *tree = NULL;
+	try {
+		tree = GetRBTree(ctx, keystr);
+		if (tree == NULL){
+			RedisModule_ReplyWithError(ctx, "no such key");
+			return REDISMODULE_OK;
+		}
+	} catch (int &e){
+		RedisModule_ReplyWithError(ctx, "key already exists of different type");
 		return REDISMODULE_OK;
 	}
 	
@@ -854,7 +893,7 @@ int RBTreeQuery_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc
 	qr.upper[1] = static_cast<uint32_t>((y2+90.0)*LONG_LAT_SCALE_FACTOR);
 	qr.upper[2] = static_cast<uint32_t>(t2);
 
-	const char *out_fmt = "title: %s %.6f/%.6f %s to %s";
+	const char *out_fmt = "title: %s %f/%f %s to %s";
 	
 	vector<Result> results;
 	if (RBTreeQuery(tree, qr, results) < 0){
@@ -894,12 +933,19 @@ int RBTreeSize_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc)
 	if (argc != 2) return RedisModule_WrongArity(ctx);
 	RedisModule_AutoMemory(ctx);
 
-	RBTree *tree = GetRBTree(ctx, argv[1]);
-	if (tree == NULL || tree->root == NULL)
-		RedisModule_ReplyWithLongLong(ctx, 0);
-	else
-		RedisModule_ReplyWithLongLong(ctx, tree->root->count);
-
+	RBTree *tree = NULL;
+	try {
+		tree = GetRBTree(ctx, argv[1]);
+		if (tree == NULL){
+			RedisModule_ReplyWithLongLong(ctx, 0);
+			return REDISMODULE_OK;
+		}
+	} catch (int &e){
+		RedisModule_ReplyWithError(ctx, "key already exists for different datatype");
+		return REDISMODULE_OK;
+	}
+	RedisModule_ReplyWithLongLong(ctx, tree->root->count);
+	
 	return REDISMODULE_OK;
 }
 
@@ -945,7 +991,7 @@ extern "C" int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv,
 		return REDISMODULE_ERR;
 
 	if (RedisModule_CreateCommand(ctx, "reventis.print", RBTreePrint_RedisCmd,
-								  "readonly fast", 1, 1, 1) == REDISMODULE_ERR)
+								  "readonly", 1, 1, 1) == REDISMODULE_ERR)
 		return REDISMODULE_ERR;
 
 	if (RedisModule_CreateCommand(ctx, "reventis.size", RBTreeSize_RedisCmd,
