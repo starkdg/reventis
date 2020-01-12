@@ -14,7 +14,7 @@ using namespace std;
 typedef struct point_t {
 	uint32_t arr[DIMS];
 	point_t(){
-		memset(arr, 0, DIMS*sizeof(uint32_t));
+		for (int i=0;i<DIMS;i++) arr[i] = 0;
 	}
 	point_t& operator=(const point_t &other){
 		if (this != &other){

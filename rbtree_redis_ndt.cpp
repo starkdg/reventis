@@ -51,7 +51,8 @@ typedef struct result_t {
 	long long id;
 	RedisModuleString *descr;
 	result_t(){}
-	result_t(const value_t &other){
+	result_t(const result_t &other){
+		s = other.s;
 		id = other.id;
 		start = other.start;
 		end = other.end;
@@ -190,6 +191,7 @@ void RBTreeDeleteMin(RBTree *tree){
 		tree->root->red = true;
 
 	tree->root = delete_min(tree->root);
+	
 	if (tree->root != NULL)
 		tree->root->red = false;
 }
@@ -202,11 +204,11 @@ RBNode* delete_key(RBNode *node, Seqn s, long long id, int level = 0){
 		if (node->left != NULL && !IsRed(node->left) && !IsRed(node->left->left)){
 			node = MoveRedLeft(node);
 		}
-		node->left = delete_key(node->left, s, id, level+1);
+		node->left = delete_key(ctx, node->left, s, id, level+1);
 	} else {
 		if (IsRed(node->left)) node = RotateRight(node);
 			
-		if ((cmpseqnums(s, node->s) == 0 || id == node->val.id) && node->right == NULL){
+		if (id == node->val.id && node->right == NULL){
 			RedisModule_Free(node);
 			return NULL;
 		}
@@ -214,32 +216,32 @@ RBNode* delete_key(RBNode *node, Seqn s, long long id, int level = 0){
 		if (node->right != NULL && !IsRed(node->right) && !IsRed(node->right->left))
 			node = MoveRedRight(node);
 			
-		if (cmpseqnums(s, node->s) == 0 || id == node->val.id){
-			if (id == node->val.id){
-				RBNode *xnode = minimum(node->right);
-				node->s = xnode->s;
-				node->val = xnode->val;
-				node->maxseqn = node->right->maxseqn;
-				
-				node->right = delete_min(node->right);
-				node->count = 1 + GetNodeCount(node->left) + GetNodeCount(node->right);
-			}
+		if (id == node->val.id){
+			RBNode *xnode = minimum(node->right);
+			node->s = xnode->s;
+			node->val = xnode->val;
+			node->maxseqn = node->right->maxseqn;
+			node->right = delete_min(node->right);
+			node->count = 1 + GetNodeCount(node->left) + GetNodeCount(node->right);
 		} else {
-			node->right = delete_key(node->right, s, id, level+1);
+			node->right = delete_key(ctx, node->right, s, id, level+1);
 		}
-		
 	}
 	return balance(node);
 }
 
 int RBTreeDelete(RBTree *tree, Seqn s, long long eventid){
-	if (tree == NULL || tree->root == NULL) return 0;
+	if (tree == NULL || tree->root == NULL)
+		return -1;
 
 	if (!IsRed(tree->root->left) && !IsRed(tree->root->right))
 		tree->root->red = true;
 
-	tree->root = delete_key(tree->root, s, eventid);
-	if (tree->root != NULL) tree->root->red = false;
+	tree->root = delete_key(ctx, tree->root, s, eventid);
+	
+	if (tree->root != NULL)
+		tree->root->red = false;
+
 	return 0;
 }
 
@@ -337,13 +339,13 @@ int rbtree_query(RBNode *node, const Region qr, Seqn &next, vector<Result> &resu
 
 		Result res;
 		res.s = node->s;
-		res.x = (double)p.arr[0]/(double)LONG_LAT_SCALE_FACTOR;
-		res.y = (double)p.arr[1]/(double)LONG_LAT_SCALE_FACTOR;
+		res.x = (double)p.arr[0]/(double)LONG_LAT_SCALE_FACTOR - 180.0;
+		res.y = (double)p.arr[1]/(double)LONG_LAT_SCALE_FACTOR - 90.0;
 		res.start = node->val.start;
 		res.end = node->val.end;
 		res.id = node->val.id;
 		res.descr = node->val.descr;
-		results.push_back(node->val);
+		results.push_back(res);
 	}
 
 	next = node->s;
@@ -721,16 +723,19 @@ int RBTreePurge_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc
 	vector<Result> results;
 	if (RBTreeQuery(tree, qr, results) < 0){
 		RedisModule_ReplyWithError(ctx, "no results");
+		return REDISMODULE_OK;
 	}
 
-	RedisModule_ReplyWithArray(ctx, results.size());
+	long long n_deletes = (long long)results.size();
+
 	for (Result r : results){
+		RedisModule_Log(ctx, "debug", "delete %s %lld (%u %u %u)",
+						RedisModule_StringPtrLen(r.descr, NULL), r.id,
+						r.s.arr[0], r.s.arr[1], r.s.arr[2]);
 		RBTreeDelete(tree, r.s, r.id);
 	}
 	
-	RedisModule_ReplyWithLongLong(ctx, results.size());
-
-	RedisModule_ReplicateVerbatim(ctx);
+	RedisModule_ReplyWithLongLong(ctx, n_deletes);
 	
 	return REDISMODULE_OK;
 }
@@ -790,6 +795,8 @@ int RBTreeDelBlk_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int arg
 	}
 
 	for (Result r : results){
+		RedisModule_Log(ctx, "debug", "delete %s %lld key = %u %u %u",
+						RedisModule_StringPtrLen(r.descr, NULL), r.id, r.s.arr[0], r.s.arr[1], r.s.arr[2]);
 		RBTreeDelete(tree, r.s, r.id);
 	}
 
