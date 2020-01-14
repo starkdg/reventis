@@ -25,5 +25,8 @@ add_executable(loadevents loaddata.cpp)
 target_link_libraries(loadevents ${HIREDIS_DIR}/libhiredis.a)
 set_target_properties(loadevents PROPERTIES INCLUDE_DIRECTORIES ${HIREDIS_INCLUDE_DIRS})
 
+add_executable(gendata generatedata.cpp)
+target_link_libraries(gendata ${HIREDIS_DIR}/libhiredis.a)
+set_target_properties(gendata PROPERTIES INCLUDE_DIRECTORIES ${HIREDIS_INCLUDE_DIRS})
 
 install(TARGETS reventis DESTINATION lib)
