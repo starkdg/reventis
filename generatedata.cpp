@@ -21,7 +21,7 @@ static uniform_int_distribution<> year_distr(116, 124);
 static uniform_int_distribution<> hour_distr(0, 23);
 static uniform_int_distribution<> minute_distr(0, 59);
 
-static uniform_int_distribution<> dur_distr(60*15, 3600*5);
+static uniform_int_distribution<unsigned int> dur_distr(60*15, 3600*5);
 
 static uniform_int_distribution<> id_distr(1000000, 20000000);
 
@@ -51,12 +51,12 @@ int gentimes(string &startdate, string &starttime, string &enddate, string &endt
 	
 	start.tm_isdst = 0;
 	t1 = mktime(&start);
-	t2 = t1 + dur_distr(gen);
 
+	unsigned int dur = dur_distr(gen);
+	t2 = t1 + (time_t)dur;
 
 	strftime(buffer, 64, date_fmt, localtime(&t1));
 	startdate = string(buffer);
-
 
 	strftime(buffer, 64, time_fmt, localtime(&t1));
 	starttime = string(buffer);
@@ -66,6 +66,8 @@ int gentimes(string &startdate, string &starttime, string &enddate, string &endt
 
 	strftime(buffer, 64, time_fmt, localtime(&t2));
 	endtime = string(buffer);
+
+	if (t2 < t1) return -1;
 	
 	return 0;
 }
@@ -91,40 +93,40 @@ int main(int argc, char **argv){
 
 	cout << "Add " << n << " random entries to " << key << endl << endl;
 
-	redisReply *reply = NULL;
-	for (int i=0;i<n;i++){
+	int count = 0;
+	redisReply *reply;
+	while (count < n){
+
 		double x,  y;
 		genlonglat(x, y);
 
-
-		string s1, t1, s2, t2;
-		gentimes(s1, t1, s2, t2);
+		string d1, t1, d2, t2;
+		if (gentimes(d1, t1, d2, t2) < 0)
+			continue;
 
 		long long idnum = id_distr(gen);
-
-		string descr = "\"Event ID # " + to_string(idnum) + "\"";
 		
-		cout << key << "    " << x << "    " << y << "    "
-			 << s1 << "    "  <<  t1 << "    "
-			 << s2 << "    " << t2 << "    " 
-			 << descr  << endl;
-
+		string descr = "\"Event ID # " + to_string(idnum) + "\"";
 
 		reply = (redisReply*)redisCommand(c, "reventis.insert %s %f %f %s %s %s %s %s",
 										  key.c_str(), x, y,
-										  s1.c_str(), t1.c_str(), s2.c_str(), t2.c_str(),
-										  descr.c_str());
+										  d1.c_str(), t1.c_str(),
+										  d2.c_str(), t2.c_str(), descr.c_str());
+
 		if (reply && reply->type == REDIS_REPLY_INTEGER){
-			cout << "eventid: " << reply->integer << endl;
+			count++;
 		} else if (reply && reply->type == REDIS_REPLY_STRING){
-			cout << reply->str << endl;
+			continue;
+		} else if (reply && reply->type == REDIS_REPLY_ERROR){
+			continue;
 		} else {
 			cout << "Error: " << c->errstr << endl;
 			break;
 		}
+		
+		freeReplyObject(reply);
 	}
 
-	freeReplyObject(reply);
-	cout << "done" << endl;
+	cout << "Total " << count << endl;
 	return 0;
 }

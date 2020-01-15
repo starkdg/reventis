@@ -1,6 +1,6 @@
 #include <cstdlib>
 #include <cstring>
-#include <clocale>
+#include <string>
 #include <cstdint>
 #include <vector>
 #include <queue>
@@ -19,8 +19,6 @@ static const char *date_fmt = "%d-%d-%d";         // MM-DD-YYY
 static const char *time_fmt = "%d:%d";            // HH:MM
 static const char *datetime_fmt = "%m-%d-%Y %H:%M"; // for use with strftime time parsing
 
-static const struct lconv *locale;
-
 static RedisModuleType *RBTreeType; 
 
 /* value struct for nodes */
@@ -36,7 +34,7 @@ typedef struct value_t {
 		id = other.id;
 		start = other.start;
 		end = other.end;
-		descr = RedisModule_CreateStringFromString(NULL, other.descr);
+		descr = other.descr;
 	}
 	value_t& operator=(const value_t &other){
 		x = other.x;
@@ -44,7 +42,7 @@ typedef struct value_t {
 		id = other.id;
 		start = other.start;
 		end = other.end;
-		descr = RedisModule_CreateStringFromString(NULL, other.descr);
+		descr = other.descr;
 		return *this;
 	}
 } Value;
@@ -63,7 +61,7 @@ typedef struct result_t {
 		id = other.id;
 		start = other.start;
 		end = other.end;
-		descr = RedisModule_CreateStringFromString(NULL, other.descr);
+		descr = other.descr;
 	}
 } Result;
 
@@ -187,27 +185,31 @@ RBNode* minimum(RBNode *node){
 	return node;
 }
 
-RBNode* delete_min(RBNode *node){
-	if (node->left == NULL) return NULL;
+RBNode* delete_min(RedisModuleCtx *ctx, RBNode *node){
+	if (node->left == NULL) {
+		RedisModule_FreeString(ctx, node->val.descr);
+		RedisModule_Free(node);
+		return NULL;
+	}
 	if (!IsRed(node->left) && !IsRed(node->left->left))
 		node = MoveRedLeft(node);
-	node->left = delete_min(node->left);
+	node->left = delete_min(ctx, node->left);
 	return balance(node);
 }
 
-void RBTreeDeleteMin(RBTree *tree){
+void RBTreeDeleteMin(RedisModuleCtx *ctx, RBTree *tree){
 	if (tree == NULL || tree->root == NULL)
 		return;
 	if (!IsRed(tree->root->left) && !IsRed(tree->root->right))
 		tree->root->red = true;
 
-	tree->root = delete_min(tree->root);
+	tree->root = delete_min(ctx, tree->root);
 	
 	if (tree->root != NULL)
 		tree->root->red = false;
 }
 
-RBNode* delete_key(RBNode *node, Seqn s, long long id, int level = 0){
+RBNode* delete_key(RedisModuleCtx *ctx, RBNode *node, Seqn s, long long id, int level = 0){
 	if (node == NULL)
 		return NULL;
 
@@ -215,11 +217,12 @@ RBNode* delete_key(RBNode *node, Seqn s, long long id, int level = 0){
 		if (node->left != NULL && !IsRed(node->left) && !IsRed(node->left->left)){
 			node = MoveRedLeft(node);
 		}
-		node->left = delete_key(node->left, s, id, level+1);
+		node->left = delete_key(ctx, node->left, s, id, level+1);
 	} else {
 		if (IsRed(node->left)) node = RotateRight(node);
 			
 		if (cmpseqnums(s, node->s) == 0 && id == node->val.id && node->right == NULL){
+			RedisModule_FreeString(ctx, node->val.descr);
 			RedisModule_Free(node);
 			return NULL;
 		}
@@ -233,24 +236,25 @@ RBNode* delete_key(RBNode *node, Seqn s, long long id, int level = 0){
 				node->s = xnode->s;
 				node->val = xnode->val;
 				node->maxseqn = node->right->maxseqn;
-				node->right = delete_min(node->right);
+				node->right = delete_min(ctx, node->right);
 				node->count = 1 + GetNodeCount(node->left) + GetNodeCount(node->right);
 			}
 		} else {
-			node->right = delete_key(node->right, s, id, level+1);
+			node->right = delete_key(ctx, node->right, s, id, level+1);
 		}
 	}
+	node->count = 1 + GetNodeCount(node->left) + GetNodeCount(node->right);
 	return balance(node);
 }
 
-int RBTreeDelete(RBTree *tree, Seqn s, long long eventid){
+int RBTreeDelete(RedisModuleCtx *ctx, RBTree *tree, Seqn s, long long eventid){
 	if (tree == NULL || tree->root == NULL)
 		return -1;
 
 	if (!IsRed(tree->root->left) && !IsRed(tree->root->right))
 		tree->root->red = true;
 
-	tree->root = delete_key(tree->root, s, eventid);
+	tree->root = delete_key(ctx, tree->root, s, eventid);
 	
 	if (tree->root != NULL)
 		tree->root->red = false;
@@ -270,27 +274,19 @@ RBNode* rbtree_insert(RBNode *node, Seqn s, Value val, int level=0){
 		return x;
 	}
 
-	int cmp = cmpseqnums(s, node->s);
-	if (cmp <= 0){
+	if (cmpseqnums(s, node->s) <= 0){
 		node->left = rbtree_insert(node->left, s, val, level+1);
-	} else if (cmpseqnums(s, node->s)){
+	} else {
 		node->right = rbtree_insert(node->right, s, val, level+1);
 		node->maxseqn = node->right->maxseqn;
 	}
 
-	if (IsRed(node->right) && !IsRed(node->left)){
-		node = RotateLeft(node);
-	}
-
-	if (IsRed(node->left) && IsRed(node->left->left)){
-		node = RotateRight(node);
-	}
-
-	if (IsRed(node->left) && IsRed(node->right)){
-		FlipColors(node);
-	}
+	if (IsRed(node->right) && !IsRed(node->left))     node = RotateLeft(node);
+	if (IsRed(node->left) && IsRed(node->left->left)) node = RotateRight(node);
+	if (IsRed(node->left) && IsRed(node->right))      FlipColors(node);
 
 	node->count = 1 + GetNodeCount(node->left) + GetNodeCount(node->right);
+
 	return node;
 }
 
@@ -298,9 +294,8 @@ int RBTreeInsert(RBTree *tree, Seqn s, Value val){
 	if (tree == NULL) return -1;
 
 	RBNode *node = rbtree_insert(tree->root, s, val);
-	if (node == NULL){
-		return -1;
-	}
+	if (node == NULL) return -1;
+	
 	node->red = false;
 	tree->root = node;
 	return 0;
@@ -407,13 +402,23 @@ int ParseDateTime(RedisModuleString *datestr, RedisModuleString *timestr, time_t
 	
 	tm datetime;
 	datetime.tm_sec = 0;
-	datetime.tm_isdst = -1;
+	datetime.tm_isdst = 0;
+	datetime.tm_wday = -1;
+	datetime.tm_yday = -1;
 	if (sscanf(ptr, date_fmt, &datetime.tm_mon, &datetime.tm_mday, &datetime.tm_year) != 3)
 		return -1;
 	if (sscanf(ptr2, time_fmt, &datetime.tm_hour, &datetime.tm_min) != 2)
 		return -1;
 	datetime.tm_mon -= 1;
 	datetime.tm_year = (datetime.tm_year >= 2000) ? datetime.tm_year%100 + 100 : datetime.tm_year%100;
+
+	if (datetime.tm_mon < 0 || datetime.tm_mon > 11)
+		return -1;
+	if (datetime.tm_mday <= 0 || datetime.tm_mday > 31)
+		return -1;
+	if (datetime.tm_year < 0 || datetime.tm_year > 300)
+		return -1;
+	
 	epoch = mktime(&datetime);
 	return 0;
 }
@@ -436,6 +441,8 @@ extern "C" void* RBTreeTypeRdbLoad(RedisModuleIO *rdb, int encver){
 		s.arr[2] = RedisModule_LoadUnsigned(rdb);
 
 		Value val; // load id, longitude, latitude, start, end, descr
+		val.x = RedisModule_LoadDouble(rdb);
+		val.y = RedisModule_LoadDouble(rdb);
 		val.id = RedisModule_LoadSigned(rdb);
 		val.start = RedisModule_LoadUnsigned(rdb);
 		val.end = RedisModule_LoadUnsigned(rdb);
@@ -460,6 +467,10 @@ extern "C" void RBTreeTypeRdbSave(RedisModuleIO *rdb, void *value){
 		RedisModule_SaveUnsigned(rdb, node->s.arr[0]);
 		RedisModule_SaveUnsigned(rdb, node->s.arr[1]);
 		RedisModule_SaveUnsigned(rdb, node->s.arr[1]);
+
+		// long./lat.
+		RedisModule_SaveDouble(rdb, node->val.x);
+		RedisModule_SaveDouble(rdb, node->val.y);
 		
 		// id
 		RedisModule_SaveSigned(rdb, node->val.id);
@@ -597,7 +608,7 @@ extern "C" int RBTreeInsert_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **ar
 
 	if (t1 > t2){
 		RedisModule_ReplyWithError(ctx, "end time cannot be greater than start time");
-		REDISMODULE_ERR;
+		return REDISMODULE_ERR;
 	}
 
 	Point pnt;
@@ -605,6 +616,8 @@ extern "C" int RBTreeInsert_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **ar
 	pnt.arr[1] = static_cast<uint32_t>((y+90.0)*LONG_LAT_SCALE_FACTOR);
 	pnt.arr[2] = static_cast<uint32_t>(t1);
 
+	RedisModule_RetainString(ctx, titlestr);
+	
 	Value val;
 	val.x = x;
 	val.y = y;
@@ -705,7 +718,7 @@ int RBTreeDelete_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int arg
 	Seqn k;
 	spfc_encode(p, k);
 	
-	RBTreeDelete(tree, k, event_id);
+	RBTreeDelete(ctx, tree, k, event_id);
 	RedisModule_ReplyWithSimpleString(ctx, "OK");
 
 	RedisModule_ReplicateVerbatim(ctx);
@@ -759,7 +772,7 @@ int RBTreePurge_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc
 		RedisModule_Log(ctx, "debug", "delete %s %lld (%u %u %u)",
 						RedisModule_StringPtrLen(r.descr, NULL), r.id,
 						r.s.arr[0], r.s.arr[1], r.s.arr[2]);
-		RBTreeDelete(tree, r.s, r.id);
+		RBTreeDelete(ctx, tree, r.s, r.id);
 	}
 	
 	RedisModule_ReplyWithLongLong(ctx, n_deletes);
@@ -830,7 +843,7 @@ int RBTreeDelBlk_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int arg
 	for (Result r : results){
 		RedisModule_Log(ctx, "debug", "delete %s %lld key = %u %u %u",
 						RedisModule_StringPtrLen(r.descr, NULL), r.id, r.s.arr[0], r.s.arr[1], r.s.arr[2]);
-		RBTreeDelete(tree, r.s, r.id);
+		RBTreeDelete(ctx, tree, r.s, r.id);
 	}
 
 	RedisModule_ReplyWithLongLong(ctx, results.size());
@@ -893,7 +906,7 @@ int RBTreeQuery_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc
 	qr.upper[1] = static_cast<uint32_t>((y2+90.0)*LONG_LAT_SCALE_FACTOR);
 	qr.upper[2] = static_cast<uint32_t>(t2);
 
-	const char *out_fmt = "title: %s %f/%f %s to %s";
+	const char *out_fmt = "title: %s id: %lld %f/%f %s to %s";
 	
 	vector<Result> results;
 	if (RBTreeQuery(tree, qr, results) < 0){
@@ -909,8 +922,8 @@ int RBTreeQuery_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc
 		strftime(s1, 64, datetime_fmt, localtime(&(v.start)));
 		strftime(s2, 64, datetime_fmt, localtime(&(v.end)));
 		RedisModuleString *resp = RedisModule_CreateStringPrintf(ctx, out_fmt,
-									 RedisModule_StringPtrLen(v.descr, NULL),
-									 v.x, v.y, s1, s2);
+									RedisModule_StringPtrLen(v.descr, NULL),
+									v.id, v.x, v.y, s1, s2);
 		RedisModule_ReplyWithString(ctx, resp);
 	}
 
@@ -955,8 +968,6 @@ extern "C" int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv,
 		RedisModule_Log(ctx, "verbose", "unable to init module");
 		return REDISMODULE_ERR;
 	}
-	
-	locale = localeconv();
 	
 	RedisModuleTypeMethods tm = {.version = REDISMODULE_TYPE_METHOD_VERSION,
 	                             .rdb_load = RBTreeTypeRdbLoad,
