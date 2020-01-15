@@ -239,7 +239,7 @@ RBNode* delete_key(RedisModuleCtx *ctx, RBNode *node, Seqn s, long long id, int 
 				node->right = delete_min(ctx, node->right);
 				node->count = 1 + GetNodeCount(node->left) + GetNodeCount(node->right);
 			}
-		} else {
+		} else if (cmpseqnums(s, node->maxseqn) <= 0){
 			node->right = delete_key(ctx, node->right, s, id, level+1);
 		}
 	}
@@ -381,6 +381,16 @@ int RBTreeQuery(RBTree *tree, const Region qr, vector<Result> &results){
 		
 	}
 	return 0;
+}
+
+long long RBTreeDepth(const RBNode *node){
+	long long depth = 0;
+	while (node != NULL){
+		if (!IsRed(node->left))
+			depth++;
+		node = node->left;
+	}
+	return depth;
 }
 
 /* =============== parse longitude latitude functions ==================== */
@@ -546,7 +556,6 @@ extern "C" void RBTreeTypeDigest(RedisModuleDigest *digest, void *value){
 	REDISMODULE_NOT_USED(digest);
 	REDISMODULE_NOT_USED(value);
 }
-
 
 /* ---------------RedisCommand functions ------------------------------*/
 
@@ -949,16 +958,36 @@ int RBTreeSize_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc)
 	RBTree *tree = NULL;
 	try {
 		tree = GetRBTree(ctx, argv[1]);
-		if (tree == NULL){
-			RedisModule_ReplyWithLongLong(ctx, 0);
+		if (tree == NULL) {
+			RedisModule_ReplyWithError(ctx, "no such key");
 			return REDISMODULE_OK;
 		}
 	} catch (int &e){
 		RedisModule_ReplyWithError(ctx, "key already exists for different datatype");
 		return REDISMODULE_OK;
 	}
+
 	RedisModule_ReplyWithLongLong(ctx, tree->root->count);
-	
+	return REDISMODULE_OK;
+}
+
+extern "C" int RBTreeDepth_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc){
+	if (argc != 2) return RedisModule_WrongArity(ctx);
+
+	RBTree *tree;
+	try {
+		tree = GetRBTree(ctx, argv[1]);
+		if (tree == NULL) {
+			RedisModule_ReplyWithError(ctx, "no such key");
+			return REDISMODULE_OK;
+		}
+	} catch (int &e){
+		RedisModule_ReplyWithError(ctx, "key already exists for different datatype");
+		return REDISMODULE_OK;
+	}
+
+	long long height = RBTreeDepth(tree->root);
+	RedisModule_ReplyWithLongLong(ctx, height);
 	return REDISMODULE_OK;
 }
 
@@ -1009,6 +1038,10 @@ extern "C" int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv,
 								  "readonly fast", 1, 1, 1) == REDISMODULE_ERR)
 		return REDISMODULE_ERR;
 
+	if (RedisModule_CreateCommand(ctx, "reventis.depth", RBTreeDepth_RedisCmd,
+								  "readonly admin fast", 1, 1, 1) == REDISMODULE_ERR)
+		return REDISMODULE_ERR;
+	
 	return REDISMODULE_OK;
 }
 

@@ -127,6 +127,8 @@ int main(int argc, char **argv){
 		freeReplyObject(reply);
 	}
 
+
+	redisFree(c);
 	cout << "Total " << count << endl;
 	return 0;
 }
