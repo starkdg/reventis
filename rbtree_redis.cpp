@@ -552,12 +552,13 @@ extern "C" void RBTreeTypeFree(void *value){
 		RedisModule_DictDelC(tree->dict, dict_key, keylen, NULL);
 	}
 	RedisModule_FreeDict(NULL, tree->dict);
+	RedisModule_Free(tree);
 }
 
 extern "C" size_t RBTreeTypeMemUsage(const void *value){
 	RBTree *tree = (RBTree*)value;
 	uint64_t sz = RedisModule_DictSize(tree->dict);
-	return sz*sizeof(RBNode);
+	return sz*sizeof(RBNode) + sizeof(*tree);
 }
 
 extern "C" void RBTreeTypeDigest(RedisModuleDigest *digest, void *value){
