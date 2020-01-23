@@ -35,20 +35,19 @@ loadmodule /var/local/lib/reventis.so
 You can use the following commands to interat with the index.  All mostly self explanatory.
 The 'purge' commmand purges all events before a specified time. The 'print' command will print
 the index entries to the redis-server.log file.  Useful for debugging purposes.  The 'size' command
-gives the number of events in the index.
-
+gives the number of events in the index. Depth gives you the balanced tree height. 
 
 ```
 reventis.insert myevents longitude latitude date-start time-start date-end time-end title-string
 reventis.query myevents  <longitude range> <latitude range> <time-range>
-reventis.lookup myevents longitude latitude start-time end-time
-reventis.delete myevents longitude latitude date-start time-start event-id
+reventis.lookup myevents event-id
+reventis.delete myevents event-id
 reventis.purge myevents date time
 reventis.delblk myevents <longitude-range> <latitude-range> <time-range>
 reventis.print myevents
 reventis.clear myevents
 reventis.size myevents
-
+reventis.depth myevents
 ```
 
 The first argument is always the name of the index - e.g. "myevents".  All inserted events belong to
