@@ -5,7 +5,9 @@
 #include <cstdint>
 #include <vector>
 #include <queue>
+#include <stack>
 #include <ctime>
+#include <chrono>
 #include <cassert>
 #include <limits>
 #include "spfc.hpp"
@@ -19,6 +21,9 @@ using namespace std;
 static const char *date_fmt = "%d-%d-%d";         // MM-DD-YYY
 static const char *time_fmt = "%d:%d";            // HH:MM
 static const char *datetime_fmt = "%m-%d-%Y %H:%M"; // for use with strftime time parsing
+
+
+/*======================= type definitions ==================================*/
 
 static RedisModuleType *RBTreeType; 
 
@@ -66,6 +71,12 @@ typedef struct result_t {
 	}
 } Result;
 
+typedef struct query_region_t {
+	double x_lower, x_upper;
+	double y_lower, y_upper;
+	time_t t_lower, t_upper;
+} QueryRegion;
+
 
 typedef struct rbnode_t {
 	Seqn s;
@@ -81,6 +92,12 @@ typedef struct rbtree_t {
 	RedisModuleDict *dict;
 } RBTree;
 
+/* structure to keep track of state of a node w.r.t. which child nodes have been visited */
+typedef struct node_state_t {
+	RBNode *node;
+	int visited; // 0 - no children visited, 1 - left visited, 2 - both visited 
+} NodeSt;
+
 /*================ Aux. functions ======================================= */
 
 int GetNodeCount(RBNode *h){
@@ -91,6 +108,27 @@ int GetNodeCount(RBNode *h){
 bool IsRed(RBNode *h){
 	if (h == NULL) return false;
 	return h->red;
+}
+
+/* check to see if point defined in Value is contained in query region*/
+bool contains(const QueryRegion qr, const Value val){
+	if (val.x < qr.x_lower || val.x > qr.x_upper)
+		return false;
+	else if (val.y < qr.y_lower || val.y > qr.y_upper)
+		return false;
+	else if (val.start < qr.t_lower || val.start > qr.t_upper)
+		return false;
+	return true;
+}
+
+int cast_query_region(const QueryRegion qr, Region &r){
+	r.lower[0] = static_cast<uint32_t>((qr.x_lower + 180.0)*LONG_LAT_SCALE_FACTOR);
+	r.lower[1] = static_cast<uint32_t>((qr.y_lower + 90.0)*LONG_LAT_SCALE_FACTOR);
+	r.lower[2] = static_cast<uint32_t>(qr.t_lower);
+	r.upper[0] = static_cast<uint32_t>((qr.x_upper + 180.0)*LONG_LAT_SCALE_FACTOR);
+	r.upper[1] = static_cast<uint32_t>((qr.y_upper + 90.0)*LONG_LAT_SCALE_FACTOR);
+	r.upper[2] = static_cast<uint32_t>(qr.t_upper);
+	return 0;
 }
 
 /*================== Get RBTree with key =================================  */
@@ -348,18 +386,14 @@ long long RBTreePrint(RedisModuleCtx *ctx, RedisModuleString *keystr){
 	return tree->root->count;
 }
 
-int rbtree_query(RBNode *node, const Region qr, Seqn &next, vector<Result> &results, int level=0){
+int rbtree_query(RBNode *node, const QueryRegion qr, const Region r,
+				 Seqn &next, vector<Result> &results, int level=0){
 	if (node == NULL) return 0;
 
-	if (cmpseqnums(next, node->s) <= 0){
-		if (rbtree_query(node->left, qr, next, results, level+1) < 0)
-			return -1;
-	}
+	if (cmpseqnums(next, node->s) <= 0)
+		rbtree_query(node->left, qr, r, next, results, level+1);
 
-	if (contains(qr, node->s)){
-		Point p;
-		spfc_decode(node->s, p);
-
+	if (contains(qr, node->val)){
 		Result res;
 		res.s = node->s;
 		res.x = node->val.x;
@@ -373,28 +407,77 @@ int rbtree_query(RBNode *node, const Region qr, Seqn &next, vector<Result> &resu
 
 	next = node->s;
 	Seqn prev = next;
-	if (!contains(qr, next) && !next_match(qr, prev, next))
+	if (!contains(qr, node->val) && !next_match(r, prev, next))
 		return 0;
 	
-	if (cmpseqnums(next, node->maxseqn) <= 0){
-		if (rbtree_query(node->right, qr, next, results, level+1) < 0)
-			return -1;
-	}
+	if (cmpseqnums(next, node->maxseqn) <= 0)
+		rbtree_query(node->right, qr, r, next, results, level+1);
 
 	return 0;
 }
 
-int RBTreeQuery(RBTree *tree, const Region qr, vector<Result> &results){
+
+int RBTreeQuery(RBTree *tree, const QueryRegion qr, vector<Result> &results){
 	if (tree->root == NULL)	return -1;
 
+	Region r;
+	cast_query_region(qr, r);
+
 	Seqn prev, next;
-	if (next_match(qr, prev, next)){
-		if (rbtree_query(tree->root, qr, next, results) < 0)
-			return -1;
-		
-	}
+	if (next_match(r, prev, next))
+		rbtree_query(tree->root, qr, r, next, results);
+
 	return 0;
 }
+
+int RBTreeQuery2(RBTree *tree, const QueryRegion qr, vector<Result> &results){
+	Region r;
+	cast_query_region(qr, r);
+
+	Seqn prev, next;
+	if (!next_match(r, prev, next)) return 0;
+		
+	stack<NodeSt> s;
+	if (tree->root) s.push({tree->root, 0});
+
+	while (!s.empty()){
+		if (s.top().visited == 0){
+			// visit left
+			s.top().visited++;
+			if (s.top().node->left && cmpseqnums(next, s.top().node->s) <= 0){
+				s.push({s.top().node->left, 0});
+			}
+		} else if (s.top().visited == 1){
+			/* left visited, right unvisited */
+			s.top().visited++;
+			if (contains(qr, s.top().node->val)){
+				Result res;
+				res.s = s.top().node->s;
+				res.x = s.top().node->val.x;
+				res.y = s.top().node->val.y;
+				res.start = s.top().node->val.start;
+				res.end = s.top().node->val.end;
+				res.id = s.top().node->val.id;
+				res.descr = s.top().node->val.descr;
+				results.push_back(res);
+			}
+
+			next = s.top().node->s;
+			Seqn prev = next;
+			if (!contains(qr, s.top().node->val) && !next_match(r, prev, next))
+				break;
+
+			if (s.top().node->right && cmpseqnums(next, s.top().node->maxseqn) <= 0){
+				s.push({s.top().node->right, 0});
+			}
+		} else { /* both left right visited */
+			s.pop();
+		}
+	}
+	
+	return 0;
+}
+
 
 long long RBTreeDepth(const RBNode *node){
 	long long depth = 0;
@@ -782,10 +865,13 @@ int RBTreePurge_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc
 		return REDISMODULE_ERR;
 	}
 
-	Region qr;
-	qr.lower[0] = qr.lower[1] = qr.lower[2] = 0;
-	qr.upper[0] = qr.upper[1] = numeric_limits<uint32_t>::max();
-	qr.upper[2] = static_cast<uint32_t>(t);
+	QueryRegion qr;
+	qr.x_lower = -180.0;
+	qr.x_upper = 180.0;
+	qr.y_lower = -90.0;
+	qr.y_upper = 90.0;
+	qr.t_lower = 0;
+	qr.t_upper = t;
 
 	RBTree *tree = NULL;
 	try {
@@ -864,13 +950,13 @@ int RBTreeDelBlk_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int arg
 		return REDISMODULE_ERR;
 	}
 	
-	Region qr;
-	qr.lower[0] = static_cast<uint32_t>((x1+180.0)*LONG_LAT_SCALE_FACTOR);
-	qr.lower[1] = static_cast<uint32_t>((y1+90.0)*LONG_LAT_SCALE_FACTOR);
-	qr.lower[2] = static_cast<uint32_t>(t1);
-	qr.upper[0] = static_cast<uint32_t>((x2+180.0)*LONG_LAT_SCALE_FACTOR);
-	qr.upper[1] = static_cast<uint32_t>((y2+90.0)*LONG_LAT_SCALE_FACTOR);
-	qr.upper[2] = static_cast<uint32_t>(t2);
+	QueryRegion qr;
+	qr.x_lower = x1;
+	qr.x_upper = x2;
+	qr.y_lower = y1;
+	qr.y_upper = y2;
+	qr.t_lower = t1;
+	qr.t_upper = t2;
 
 	vector<Result> results;
 	if (RBTreeQuery(tree, qr, results) < 0){
@@ -894,8 +980,9 @@ int RBTreeDelBlk_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int arg
 /* args: mytree longitude-range latitude-range start-range end-range */
 int RBTreeQuery_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc){
 	if (argc != 10) return RedisModule_WrongArity(ctx);
-
 	RedisModule_AutoMemory(ctx);
+
+	chrono::time_point<chrono::high_resolution_clock> start = chrono::high_resolution_clock::now();
 	
 	RedisModuleString *keystr = argv[1];
 
@@ -937,18 +1024,18 @@ int RBTreeQuery_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc
 		return REDISMODULE_ERR;
 	}
 	
-	Region qr;
-	qr.lower[0] = static_cast<uint32_t>((x1+180.0)*LONG_LAT_SCALE_FACTOR);
-	qr.lower[1] = static_cast<uint32_t>((y1+90.0)*LONG_LAT_SCALE_FACTOR);
-	qr.lower[2] = static_cast<uint32_t>(t1);
-	qr.upper[0] = static_cast<uint32_t>((x2+180.0)*LONG_LAT_SCALE_FACTOR);
-	qr.upper[1] = static_cast<uint32_t>((y2+90.0)*LONG_LAT_SCALE_FACTOR);
-	qr.upper[2] = static_cast<uint32_t>(t2);
+	QueryRegion qr;
+	qr.x_lower = x1;
+	qr.x_upper = x2;
+	qr.y_lower = y1;
+	qr.y_upper = y2;
+	qr.t_lower = t1;
+	qr.t_upper = t2;
 
 	const char *out_fmt = "title: %s id: %lld %f/%f %s to %s";
 	
 	vector<Result> results;
-	if (RBTreeQuery(tree, qr, results) < 0){
+	if (RBTreeQuery2(tree, qr, results) < 0){
 		RedisModule_ReplyWithError(ctx, "Err - Unable to query");
 		return REDISMODULE_ERR;
 	}
@@ -966,6 +1053,11 @@ int RBTreeQuery_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc
 		RedisModule_ReplyWithString(ctx, resp);
 	}
 
+	chrono::time_point<chrono::high_resolution_clock> end = chrono::high_resolution_clock::now();
+	auto elapsed = chrono::duration_cast<chrono::microseconds>(end - start).count();
+	unsigned int dur = elapsed;
+	RedisModule_Log(ctx, "debug", "query time - %u microseconds", dur);
+	
 	return REDISMODULE_OK;
 }
 
