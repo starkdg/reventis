@@ -53,6 +53,7 @@ typedef struct value_t {
 	}
 } Value;
 
+/* query results */
 typedef struct result_t {
 	Seqn s;
 	double x, y;
@@ -92,7 +93,8 @@ typedef struct rbtree_t {
 	RedisModuleDict *dict;
 } RBTree;
 
-/* structure to keep track of state of a node w.r.t. which child nodes have been visited */
+/* aux. structure to keep track of state of a node w.r.t. which child nodes 
+have been visited in a query */
 typedef struct node_state_t {
 	RBNode *node;
 	int visited; // 0 - no children visited, 1 - left visited, 2 - both visited 
@@ -121,6 +123,7 @@ bool contains(const QueryRegion qr, const Value val){
 	return true;
 }
 
+/* cast a query in terms of the spfc function */
 int cast_query_region(const QueryRegion qr, Region &r){
 	r.lower[0] = static_cast<uint32_t>((qr.x_lower + 180.0)*LONG_LAT_SCALE_FACTOR);
 	r.lower[1] = static_cast<uint32_t>((qr.y_lower + 90.0)*LONG_LAT_SCALE_FACTOR);
@@ -131,8 +134,41 @@ int cast_query_region(const QueryRegion qr, Region &r){
 	return 0;
 }
 
+int ParseLongLat(RedisModuleString *xstr, RedisModuleString *ystr, double &x, double &y){
+	if (RedisModule_StringToDouble(xstr, &x) == REDISMODULE_ERR)
+		return REDISMODULE_ERR;
+	if (RedisModule_StringToDouble(ystr, &y) == REDISMODULE_ERR)
+		return -1;
+	return 0;
+}
+
+int ParseDateTime(RedisModuleString *datestr, RedisModuleString *timestr, time_t &epoch){
+	const char *ptr = RedisModule_StringPtrLen(datestr, NULL);
+	const char *ptr2 = RedisModule_StringPtrLen(timestr, NULL);
+	if (ptr == NULL || ptr2 == NULL) return -1;
+	
+	tm datetime;
+	datetime.tm_sec = 0;
+	datetime.tm_isdst = 0;
+	datetime.tm_wday = -1;
+	datetime.tm_yday = -1;
+	if (sscanf(ptr, date_fmt, &datetime.tm_mon, &datetime.tm_mday, &datetime.tm_year) != 3)	return -1;
+	if (sscanf(ptr2, time_fmt, &datetime.tm_hour, &datetime.tm_min) != 2) return -1;
+	datetime.tm_mon -= 1;
+	datetime.tm_year = (datetime.tm_year >= 2000) ? datetime.tm_year%100 + 100 : datetime.tm_year%100;
+
+	if (datetime.tm_mon < 0 || datetime.tm_mon > 11) return -1;
+	if (datetime.tm_mday <= 0 || datetime.tm_mday > 31)	return -1;
+	if (datetime.tm_year < 0 || datetime.tm_year > 300)	return -1;
+	epoch = mktime(&datetime);
+
+	return 0;
+}
+
 /*================== Get RBTree with key =================================  */
 
+/* Return the native data type. NULL if does not yet exist, throw -1 exception
+   if the key exists but for a different type. */
 RBTree* GetRBTree(RedisModuleCtx *ctx, RedisModuleString *keystr){
 	RedisModuleKey *key = (RedisModuleKey*)RedisModule_OpenKey(ctx, keystr, REDISMODULE_READ);
 	int keytype = RedisModule_KeyType(key);
@@ -152,6 +188,7 @@ RBTree* GetRBTree(RedisModuleCtx *ctx, RedisModuleString *keystr){
 	return tree;
 }
 
+/* Create a new data type, throw -1 exception if already exists for a different type */
 RBTree* CreateRBTree(RedisModuleCtx *ctx, RedisModuleString *keystr){
 	RedisModuleKey *key = (RedisModuleKey*)RedisModule_OpenKey(ctx, keystr, REDISMODULE_WRITE);
 	int keytype = RedisModule_KeyType(key);
@@ -321,7 +358,7 @@ RBNode* rbtree_insert(RBTree *tree, RBNode *node, Seqn s, Value val, int level=0
 		x->red = true;
 		x->count = 1;
 		x->left = x->right = NULL;
-		RedisModule_DictReplaceC(tree->dict, &(x->val.id), sizeof(long long), x);
+		RedisModule_DictSetC(tree->dict, &(x->val.id), sizeof(long long), x);
 		return x;
 	}
 
@@ -386,6 +423,7 @@ long long RBTreePrint(RedisModuleCtx *ctx, RedisModuleString *keystr){
 	return tree->root->count;
 }
 
+/* recursive query implementation */
 int rbtree_query(RBNode *node, const QueryRegion qr, const Region r,
 				 Seqn &next, vector<Result> &results, int level=0){
 	if (node == NULL) return 0;
@@ -430,6 +468,7 @@ int RBTreeQuery(RBTree *tree, const QueryRegion qr, vector<Result> &results){
 	return 0;
 }
 
+/* non-recursive implementation */
 int RBTreeQuery2(RBTree *tree, const QueryRegion qr, vector<Result> &results){
 	Region r;
 	cast_query_region(qr, r);
@@ -441,14 +480,13 @@ int RBTreeQuery2(RBTree *tree, const QueryRegion qr, vector<Result> &results){
 	if (tree->root) s.push({tree->root, 0});
 
 	while (!s.empty()){
-		if (s.top().visited == 0){
+		if (s.top().visited == 0){ /* if needed, visit left */
 			// visit left
 			s.top().visited++;
 			if (s.top().node->left && cmpseqnums(next, s.top().node->s) <= 0){
 				s.push({s.top().node->left, 0});
 			}
-		} else if (s.top().visited == 1){
-			/* left visited, right unvisited */
+		} else if (s.top().visited == 1){ /* check node.  if needed, visit right */
 			s.top().visited++;
 			if (contains(qr, s.top().node->val)){
 				Result res;
@@ -478,52 +516,14 @@ int RBTreeQuery2(RBTree *tree, const QueryRegion qr, vector<Result> &results){
 	return 0;
 }
 
-
 long long RBTreeDepth(const RBNode *node){
 	long long depth = 0;
 	while (node != NULL){
-		if (!IsRed(node->left))
-			depth++;
+		if (!IsRed(node->left))	depth++;
 		node = node->left;
 	}
 	return depth;
 }
-
-/* =============== parse longitude latitude functions ==================== */
-
-int ParseLongLat(RedisModuleString *xstr, RedisModuleString *ystr, double &x, double &y){
-	if (RedisModule_StringToDouble(xstr, &x) == REDISMODULE_ERR)
-		return REDISMODULE_ERR;
-	if (RedisModule_StringToDouble(ystr, &y) == REDISMODULE_ERR)
-		return -1;
-	return 0;
-}
-
-/* ================ parse date time functions ============================ */
-
-int ParseDateTime(RedisModuleString *datestr, RedisModuleString *timestr, time_t &epoch){
-	const char *ptr = RedisModule_StringPtrLen(datestr, NULL);
-	const char *ptr2 = RedisModule_StringPtrLen(timestr, NULL);
-	if (ptr == NULL || ptr2 == NULL) return -1;
-	
-	tm datetime;
-	datetime.tm_sec = 0;
-	datetime.tm_isdst = 0;
-	datetime.tm_wday = -1;
-	datetime.tm_yday = -1;
-	if (sscanf(ptr, date_fmt, &datetime.tm_mon, &datetime.tm_mday, &datetime.tm_year) != 3)	return -1;
-	if (sscanf(ptr2, time_fmt, &datetime.tm_hour, &datetime.tm_min) != 2) return -1;
-	datetime.tm_mon -= 1;
-	datetime.tm_year = (datetime.tm_year >= 2000) ? datetime.tm_year%100 + 100 : datetime.tm_year%100;
-
-	if (datetime.tm_mon < 0 || datetime.tm_mon > 11) return -1;
-	if (datetime.tm_mday <= 0 || datetime.tm_mday > 31)	return -1;
-	if (datetime.tm_year < 0 || datetime.tm_year > 300)	return -1;
-	epoch = mktime(&datetime);
-
-	return 0;
-}
-
 
 /* ------------------ RBTree type methods -----------------------------*/
 
@@ -786,7 +786,7 @@ extern "C" int RBTreeLookup_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **ar
 	int nokey;
 	RBNode *idnode = (RBNode*)RedisModule_DictGetC(tree->dict, (void*)&event_id, sizeof(event_id), &nokey);
 	if (nokey || idnode == NULL){
-		RedisModule_ReplyWithSimpleString(ctx, "None");
+		RedisModule_ReplyWithNull(ctx);
 		return REDISMODULE_OK;
 	}
 
@@ -886,7 +886,7 @@ int RBTreePurge_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc
 	}
 
 	vector<Result> results;
-	if (RBTreeQuery(tree, qr, results) < 0){
+	if (RBTreeQuery2(tree, qr, results) < 0){
 		RedisModule_ReplyWithError(ctx, "ERR - Unable to query");
 		return REDISMODULE_ERR;
 	}
@@ -901,6 +901,7 @@ int RBTreePurge_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc
 	}
 	
 	RedisModule_ReplyWithLongLong(ctx, n_deletes);
+	RedisModule_ReplicateVerbatim(ctx);
 	return REDISMODULE_OK;
 }
 
@@ -959,7 +960,7 @@ int RBTreeDelBlk_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int arg
 	qr.t_upper = t2;
 
 	vector<Result> results;
-	if (RBTreeQuery(tree, qr, results) < 0){
+	if (RBTreeQuery2(tree, qr, results) < 0){
 		RedisModule_ReplyWithNull(ctx);
 		return REDISMODULE_ERR;
 	}

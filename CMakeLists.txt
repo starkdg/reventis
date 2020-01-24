@@ -30,4 +30,8 @@ add_executable(gendata generatedata.cpp)
 target_link_libraries(gendata ${HIREDIS_DIR}/libhiredis.a)
 set_target_properties(gendata PROPERTIES INCLUDE_DIRECTORIES ${HIREDIS_INCLUDE_DIRS})
 
+add_executable(testquery test_query.cpp)
+target_link_libraries(testquery ${HIREDIS_DIR}/libhiredis.a)
+set_target_properties(testquery PROPERTIES INCLUDE_DIRECTORIES ${HIREDIS_INCLUDE_DIRS})
+
 install(TARGETS reventis DESTINATION lib)

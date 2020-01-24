@@ -35,10 +35,6 @@ int parse_entry(string line, Entry &entry){
 	getline(ss, entry.starttime, ',');
 	getline(ss, entry.endtime, ',');
 	getline(ss, entry.descr);
-	trim(entry.descr);
-	trim(entry.date);
-	trim(entry.starttime);
-	trim(entry.endtime);
 	return 0;
 }
 
@@ -83,6 +79,8 @@ int main(int argc, char **argv){
 		if (reply && reply->type == REDIS_REPLY_INTEGER){
 			cout << "eventid: " << reply->integer << endl;
 		} else if (reply && reply->type == REDIS_REPLY_STRING){
+			cout << reply->str << endl;
+		} else if (reply && reply->type == REDIS_REPLY_ERROR){
 			cout << reply->str << endl;
 		} else {
 			cout << "Error: " << c->errstr << endl;
