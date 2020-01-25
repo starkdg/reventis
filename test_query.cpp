@@ -65,7 +65,6 @@ int main(int argc, char **argv){
 	freeReplyObject(reply);
 
 	cout << "Total = " << count << endl << endl;
-	assert(count >= 3);
 	
 	x1 = -72.257400;
 	x2 = -72.248800;
@@ -88,7 +87,6 @@ int main(int argc, char **argv){
 	freeReplyObject(reply);
 
 	cout << "Total = " << count << endl << endl;
-	assert(count >= 6);
 	
 	x1 = -72.218815;
 	x2 = -72.217520;
@@ -110,7 +108,6 @@ int main(int argc, char **argv){
 	freeReplyObject(reply);
 
 	cout << "Total = " << count << endl << endl;
-	assert(count >= 4);
 	
 	x1 = -73.514076;
 	x2 = -71.793121;
@@ -134,7 +131,6 @@ int main(int argc, char **argv){
 	freeReplyObject(reply);
 
 	cout << "Total = " << count << endl << endl;
-	assert(count >= 31);
 	
 	redisFree(c);
 	return 0;

@@ -97,7 +97,7 @@ typedef struct rbtree_t {
 have been visited in a query */
 typedef struct node_state_t {
 	RBNode *node;
-	int visited; // 0 - no children visited, 1 - left visited, 2 - both visited 
+	int visited; // 0 - no children visited, 1 - left visited, 2 - both visited
 } NodeSt;
 
 /*================ Aux. functions ======================================= */
@@ -389,6 +389,19 @@ int RBTreeInsert(RBTree *tree, Seqn s, Value val){
 	return 0;
 }
 
+
+RBNode* CreateRBNode(RedisModuleDict *dict, Seqn s, Value val){
+	RBNode *x = (RBNode*)RedisModule_Calloc(1, sizeof(RBNode));
+	x->s = s;
+	x->maxseqn = s;
+	x->val = val;
+	x->red = true;
+	x->count = 1;
+	x->left = x->right = NULL;
+	RedisModule_DictSetC(dict, &(x->val.id), sizeof(long long), x);
+	return x;
+}
+
 /* in-order travsal */
 void print_tree(RedisModuleCtx *ctx, RBNode *node, int level = 0){
 	if (node == NULL) return;
@@ -635,7 +648,6 @@ extern "C" void RBTreeTypeFree(void *value){
 		RedisModule_DictDelC(tree->dict, dict_key, keylen, NULL);
 	}
 	RedisModule_FreeDict(NULL, tree->dict);
-	RedisModule_Free(tree);
 }
 
 extern "C" size_t RBTreeTypeMemUsage(const void *value){

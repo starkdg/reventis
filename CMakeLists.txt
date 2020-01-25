@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.0)
 
-project(reventis-redis)
+project(Reventis)
 include(ExternalProject)
 
 set(MODULE_SRCS rbtree_redis.cpp spfc.cpp)
@@ -35,3 +35,14 @@ target_link_libraries(testquery ${HIREDIS_DIR}/libhiredis.a)
 set_target_properties(testquery PROPERTIES INCLUDE_DIRECTORIES ${HIREDIS_INCLUDE_DIRS})
 
 install(TARGETS reventis DESTINATION lib)
+
+
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Event Indexing System")
+set(CPACK_PACKAGE_VENDOR "Aetilius")
+set(CPACK_PACKAGE_VERSION_MAJOR "0")
+set(CPACK_PACKAGE_VERSION_MINOR "1")
+set(CPACK_PACKAGE_VERSION_PATCH "0")
+set(CPACK_GENERATOR "TGZ")
+include(CPack)
+
+
