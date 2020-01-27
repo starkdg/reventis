@@ -34,8 +34,13 @@ add_executable(testquery test_query.cpp)
 target_link_libraries(testquery ${HIREDIS_DIR}/libhiredis.a)
 set_target_properties(testquery PROPERTIES INCLUDE_DIRECTORIES ${HIREDIS_INCLUDE_DIRS})
 
+add_executable(testspfc test_spfc.cpp spfc.cpp)
+
 install(TARGETS reventis DESTINATION lib)
 
+
+enable_testing()
+add_test(NAME TestSpfc COMMAND testspfc)
 
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Event Indexing System")
 set(CPACK_PACKAGE_VENDOR "Aetilius")

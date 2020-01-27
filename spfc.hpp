@@ -24,12 +24,14 @@ typedef struct point_t {
 		}
 		return *this;
 	}
+
 	point_t& operator++(int){
-		arr[DIMS-1]++;
-		for (int i=DIMS-1;i>=0;i--){
-			if (i-1 >= 0 && arr[i] == 0xffffffff)
-				arr[i-1]++;
+		int i = DIMS-1;
+		arr[i]++;
+		while (arr[i] == 0 && i > 0){
+			arr[i--]++;
 		}
+
 		return *this;
 	}
 
