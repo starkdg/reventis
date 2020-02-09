@@ -1,12 +1,12 @@
 cmake_minimum_required(VERSION 3.0)
 
-project(Reventis)
+project(Reventis VERSION 0.1 DESCRIPTION "spatio-temporal event index" LANGUAGES "C++")
 include(ExternalProject)
 
 set(MODULE_SRCS rbtree_redis.cpp spfc.cpp)
 set(CMAKE_INSTALL_PREFIX /var/local)
 
-set(CMAKE_BUILD_TYPE Debug)
+set(CMAKE_BUILD_TYPE RELWITHDEBINFO)
 
 add_library(reventis MODULE ${MODULE_SRCS})
 set_target_properties(reventis PROPERTIES PREFIX "")
@@ -37,7 +37,6 @@ set_target_properties(testquery PROPERTIES INCLUDE_DIRECTORIES ${HIREDIS_INCLUDE
 add_executable(testspfc test_spfc.cpp spfc.cpp)
 
 install(TARGETS reventis DESTINATION lib)
-
 
 enable_testing()
 add_test(NAME TestSpfc COMMAND testspfc)
