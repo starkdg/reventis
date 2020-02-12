@@ -5,6 +5,7 @@
 #include <limits>
 #include <ctime>
 #include <string>
+#include <cassert>
 #include "hiredis.h"
 
 using namespace std;
@@ -72,6 +73,15 @@ int gentimes(string &startdate, string &starttime, string &enddate, string &endt
 	return 0;
 }
 
+long long get_size(redisContext *c, const string &key){
+	long long sz = -1;
+	redisReply *reply = (redisReply*)redisCommand(c, "reventis.size %s", key.c_str());
+	if (reply && reply->type == REDIS_REPLY_INTEGER){
+		sz = reply->integer;
+	}
+	return sz;
+}
+
 int main(int argc, char **argv){
 	if (argc < 3){
 		cout << "not enough args" << endl;
@@ -91,7 +101,10 @@ int main(int argc, char **argv){
 		}
 	}
 
-	cout << "Add " << n << " random entries to " << key << endl << endl;
+
+	long long original_size = get_size(c, key);
+	
+	cout << "Add " << n << " random entries to " << key << " containing " << original_size << endl << endl;
 
 	int count = 0;
 	redisReply *reply;
@@ -127,7 +140,9 @@ int main(int argc, char **argv){
 		freeReplyObject(reply);
 	}
 
-
+	long long appended_size = get_size(c, key);
+	assert(appended_size == original_size + count);
+	
 	redisFree(c);
 	cout << "Total " << count << endl;
 	return 0;

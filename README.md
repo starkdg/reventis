@@ -1,7 +1,23 @@
 # Reventis
 
-A Redis module for indexing events by location and time, capable of efficient range query.
-Indexes by longitude, latitude and time - e.g. -72.338000  41.571000 12-01-2019 12:00.
+A Redis module for indexing events by location and time for fast efficient
+range query.  Spatial coordinates are given in longitude and latitude with
+up to 6 digits of precision. 
+
+## Features
+
+* Store all events in a single Redis native data structure. Use multiple
+  data structures with different keys.  
+
+* Efficient range query.  Get all results within a specified range.
+
+* Add/remove categories to individual events.  Include only results
+  in a range query that fall in certain specified categories.  
+
+* Purge all that events that fall before a specific time stamp.
+
+* Delete a block of events in a certain range.
+
 
 ## Installation Instructions
 
@@ -11,10 +27,11 @@ To build and install the module:
 make .
 make all
 make install
-make test
 ```
 
-to /var/local/lib directory.
+Run `make test` when you have a redis server up and running.  
+
+Installs to /var/local/lib directory.
 
 To load the module into redis, just type in the redis-cli:
 
@@ -33,7 +50,7 @@ loadmodule /var/local/lib/reventis.so
 
 # Module Commands
 
-You can use the following commands to interat with the index.  All mostly self explanatory.
+You can use the following commands to interact with the index.  All mostly self explanatory.
 The 'purge' commmand purges all events before a specified time. The 'print' command will print
 the index entries to the redis-server.log file.  Useful for debugging purposes.  The 'size' command
 gives the number of events in the index. Depth gives you the balanced tree height. 
@@ -50,6 +67,21 @@ reventis.clear key
 reventis.size key
 reventis.depth key
 ```
+
+v0.2 introduces categories.  For each event indexed, you can add/remove categories.  Just map your
+categories to integer values - from 1 up to 64.
+
+```
+reventis.addcategory key event-id category-id ... [ category-id ... [category-id]]
+reventis.remcategory key event-id category-id ... [ category-id ... [category-id]]
+```
+
+Then, query like this.  Just specify any variable number of categories on the end:
+
+```
+reventis.query key <longitude range> <latitude range> <time-range> <category-id> ...
+```
+
 
 The first argument is always the name of the index - e.g. "myevents".  All inserted events belong to
 a particular index structure. Multiple structures are possible.  
@@ -70,6 +102,7 @@ a specific number of randomly generated events to the index.
 ./gendata key <int>
 ```
 
-The testquery program will check for clusters in the data set.
+The `testreventis` program will test the basic functions of the module. It will run with
+ctest, but make sure you have a redis-server running before you invoke it.  
 
 

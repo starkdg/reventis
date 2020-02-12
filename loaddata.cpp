@@ -6,6 +6,7 @@
 #include <cstring>
 #include <ctime>
 #include <algorithm>
+#include <cassert>
 #include "hiredis.h"
 
 using namespace std;
@@ -38,6 +39,15 @@ int parse_entry(string line, Entry &entry){
 	return 0;
 }
 
+long long get_size(redisContext *c, const string &key){
+	long long sz = -1;
+	redisReply *reply = (redisReply*)redisCommand(c, "reventis.size %s", key.c_str());
+	if (reply && reply->type == REDIS_REPLY_INTEGER){
+		sz = reply->integer;
+	}
+	return sz;
+}
+
 int main(int argc, char **argv){
 	if (argc < 3){
 		cout << "not enough args" << endl;
@@ -61,6 +71,8 @@ int main(int argc, char **argv){
 		}
 	}
 
+	long long original_size = get_size(c, tree);
+	
 	redisReply *reply;
 	
 	int count = 0;
@@ -78,6 +90,7 @@ int main(int argc, char **argv){
 
 		if (reply && reply->type == REDIS_REPLY_INTEGER){
 			cout << "eventid: " << reply->integer << endl;
+			count++;
 		} else if (reply && reply->type == REDIS_REPLY_STRING){
 			cout << reply->str << endl;
 		} else if (reply && reply->type == REDIS_REPLY_ERROR){
@@ -88,9 +101,11 @@ int main(int argc, char **argv){
 		}
 
 		freeReplyObject(reply);
-		count++;
 	}
 
+	long long appended_size = get_size(c, tree);
+	assert(appended_size == original_size + count);
+	
 	redisFree(c);
 	return 0;
 }

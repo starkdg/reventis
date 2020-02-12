@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.0)
 
-project(Reventis VERSION 0.1 DESCRIPTION "spatio-temporal event index" LANGUAGES "C++")
+project(Reventis VERSION 0.2.0 DESCRIPTION "spatio-temporal event index")
 include(ExternalProject)
 
 set(MODULE_SRCS rbtree_redis.cpp spfc.cpp)
@@ -30,9 +30,9 @@ add_executable(gendata generatedata.cpp)
 target_link_libraries(gendata ${HIREDIS_DIR}/libhiredis.a)
 set_target_properties(gendata PROPERTIES INCLUDE_DIRECTORIES ${HIREDIS_INCLUDE_DIRS})
 
-add_executable(testquery test_query.cpp)
-target_link_libraries(testquery ${HIREDIS_DIR}/libhiredis.a)
-set_target_properties(testquery PROPERTIES INCLUDE_DIRECTORIES ${HIREDIS_INCLUDE_DIRS})
+add_executable(testreventis test_reventis.cpp)
+target_link_libraries(testreventis ${HIREDIS_DIR}/libhiredis.a)
+set_target_properties(testreventis PROPERTIES INCLUDE_DIRECTORIES ${HIREDIS_INCLUDE_DIRS})
 
 add_executable(testspfc test_spfc.cpp spfc.cpp)
 
@@ -40,11 +40,12 @@ install(TARGETS reventis DESTINATION lib)
 
 enable_testing()
 add_test(NAME TestSpfc COMMAND testspfc)
+add_test(NAME TestReventis COMMAND testreventis)
 
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Event Indexing System")
 set(CPACK_PACKAGE_VENDOR "Aetilius")
 set(CPACK_PACKAGE_VERSION_MAJOR "0")
-set(CPACK_PACKAGE_VERSION_MINOR "1")
+set(CPACK_PACKAGE_VERSION_MINOR "2")
 set(CPACK_PACKAGE_VERSION_PATCH "0")
 set(CPACK_GENERATOR "TGZ")
 include(CPack)
