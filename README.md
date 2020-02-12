@@ -2,7 +2,8 @@
 
 A Redis module for indexing events by location and time for fast efficient
 range query.  Spatial coordinates are given in longitude and latitude with
-up to 6 digits of precision. 
+up to 6 digits of precision. Time is specified by strings - e.g. HH:MM[:SS]
+The second precision is optional.
 
 ## Features
 
@@ -87,7 +88,7 @@ The first argument is always the name of the index - e.g. "myevents".  All inser
 a particular index structure. Multiple structures are possible.  
 
 Longitude values must be in the range -180.0 ot 180.0, while acceptable latitudes are -90.0 to 90.0.
-Time values are in 24 hour time in the form HH:MM.
+Time values are in 24 hour time in the form HH:MM:SS. 
 Date values are in the form MM:DD:YYYY
 
 The longitude/latitude and time range arguments must include lower and upper bounds.

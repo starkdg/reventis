@@ -19,8 +19,8 @@ using namespace std;
 #define RBTREE_ENCODING_VERSION 1
 
 static const char *date_fmt = "%d-%d-%d";         // MM-DD-YYY
-static const char *time_fmt = "%d:%d";            // HH:MM
-static const char *datetime_fmt = "%m-%d-%Y %H:%M"; // for use with strftime time parsing
+static const char *time_fmt = "%d:%d:%d";            // HH:MM
+static const char *datetime_fmt = "%m-%d-%Y %H:%M:%S"; // for use with strftime time parsing
 
 
 /*======================= type definitions ==================================*/
@@ -141,12 +141,12 @@ int ParseDateTime(RedisModuleString *datestr, RedisModuleString *timestr, time_t
 	if (ptr == NULL || ptr2 == NULL) return -1;
 	
 	tm datetime;
-	datetime.tm_sec = 0;
+	memset(&datetime, 0, sizeof(tm));
 	datetime.tm_isdst = 0;
 	datetime.tm_wday = -1;
 	datetime.tm_yday = -1;
-	if (sscanf(ptr, date_fmt, &datetime.tm_mon, &datetime.tm_mday, &datetime.tm_year) != 3)	return -1;
-	if (sscanf(ptr2, time_fmt, &datetime.tm_hour, &datetime.tm_min) != 2) return -1;
+	if (sscanf(ptr, date_fmt, &datetime.tm_mon, &datetime.tm_mday, &datetime.tm_year) < 3)	return -1;
+	if (sscanf(ptr2, time_fmt, &datetime.tm_hour, &datetime.tm_min, &datetime.tm_sec) < 2) return -1;
 	datetime.tm_mon -= 1;
 	datetime.tm_year = (datetime.tm_year >= 2000) ? datetime.tm_year%100 + 100 : datetime.tm_year%100;
 
