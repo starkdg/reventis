@@ -590,6 +590,7 @@ extern "C" void RBTreeTypeRdbSave(RedisModuleIO *rdb, void *value){
 		// id
 		RedisModule_SaveSigned(rdb, node->val.id);
 		RedisModule_SaveSigned(rdb, node->val.obj_id);
+		RedisModule_SaveUnsigned(rdb, node->val.cat);
 		
 		// time start/end
 		RedisModule_SaveUnsigned(rdb, node->val.start);
