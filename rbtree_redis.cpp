@@ -21,7 +21,6 @@ using namespace std;
 static const char *date_fmt = "%d-%d-%d";         // MM-DD-YYY
 static const char *time_fmt = "%d:%d:%d";            // HH:MM
 static const char *datetime_fmt = "%m-%d-%Y %H:%M:%S"; // for use with strftime time parsing
-static char tz_envvar[7] = "TZ=GMT";
 
 /*======================= type definitions ==================================*/
 
@@ -141,7 +140,7 @@ int ParseDateTime(RedisModuleString *datestr, RedisModuleString *timestr, time_t
 	if (ptr == NULL || ptr2 == NULL) return -1;
 
 
-	putenv(tz_envvar);
+	setenv("TZ", "GMT", 1);
 	
 	tm datetime;
 	memset(&datetime, 0, sizeof(tm));
@@ -155,6 +154,8 @@ int ParseDateTime(RedisModuleString *datestr, RedisModuleString *timestr, time_t
 	if (datetime.tm_year < 0 || datetime.tm_year > 300)	return -1;
 	epoch = mktime(&datetime);
 
+	unsetenv("TZ");
+	
 	return 0;
 }
 
@@ -868,13 +869,15 @@ extern "C" int RBTreeLookup_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **ar
 		return REDISMODULE_OK;
 	}
 
-	putenv(tz_envvar);
+	setenv("TZ", "GMT", 1);
 	
 	char s1[64];
 	char s2[64];
 	strftime(s1, 64, datetime_fmt, gmtime(&(idnode->val.start)));
 	strftime(s2, 64, datetime_fmt, gmtime(&(idnode->val.end)));
 
+	unsetenv("TZ");
+	
 	RedisModuleString *replystr = RedisModule_CreateStringPrintf(ctx, "%s %f %f %s %s",
 											  RedisModule_StringPtrLen(idnode->val.descr, NULL),
 										      idnode->val.x, idnode->val.y, s1, s2);
@@ -1148,7 +1151,8 @@ int RBTreeQuery_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc
 									node->val.id, node->val.x, node->val.y, s1, s2);
 		RedisModule_ReplyWithString(ctx, resp);
 	}
-
+	unsetenv("TZ");
+	
 	chrono::time_point<chrono::high_resolution_clock> end = chrono::high_resolution_clock::now();
 	auto elapsed = chrono::duration_cast<chrono::microseconds>(end - start).count();
 	unsigned int dur = elapsed;
