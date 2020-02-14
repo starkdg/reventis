@@ -21,7 +21,7 @@ using namespace std;
 static const char *date_fmt = "%d-%d-%d";         // MM-DD-YYY
 static const char *time_fmt = "%d:%d:%d";            // HH:MM
 static const char *datetime_fmt = "%m-%d-%Y %H:%M:%S"; // for use with strftime time parsing
-
+static char tz_envvar[7] = "TZ=GMT";
 
 /*======================= type definitions ==================================*/
 
@@ -139,12 +139,12 @@ int ParseDateTime(RedisModuleString *datestr, RedisModuleString *timestr, time_t
 	const char *ptr = RedisModule_StringPtrLen(datestr, NULL);
 	const char *ptr2 = RedisModule_StringPtrLen(timestr, NULL);
 	if (ptr == NULL || ptr2 == NULL) return -1;
+
+
+	putenv(tz_envvar);
 	
 	tm datetime;
 	memset(&datetime, 0, sizeof(tm));
-	datetime.tm_isdst = 0;
-	datetime.tm_wday = -1;
-	datetime.tm_yday = -1;
 	if (sscanf(ptr, date_fmt, &datetime.tm_mon, &datetime.tm_mday, &datetime.tm_year) < 3)	return -1;
 	if (sscanf(ptr2, time_fmt, &datetime.tm_hour, &datetime.tm_min, &datetime.tm_sec) < 2) return -1;
 	datetime.tm_mon -= 1;
@@ -407,7 +407,7 @@ void print_tree(RedisModuleCtx *ctx, RBNode *node, int level = 0){
 	double y = node->val.y;
 
 	char scratch[64];
-	strftime(scratch, 64, datetime_fmt, localtime(&(node->val.start)));
+	strftime(scratch, 64, datetime_fmt, gmtime(&(node->val.start)));
 
 	RedisModule_Log(ctx, "info", "print (level %d) %s %.6f/%.6f id=%lld %s red=%d cat=%ld", level,
 					RedisModule_StringPtrLen(node->val.descr, NULL), x, y,
@@ -615,8 +615,8 @@ extern "C" void RBTreeTypeAofRewrite(RedisModuleIO *aof, RedisModuleString *key,
 	unsigned char *dict_key;
 	RBNode *node;
 	while ((dict_key = (unsigned char*)RedisModule_DictNextC(iter, NULL, (void**)&node)) != NULL){
-		strftime(s1, 64, "%m-%d-%Y %H:%M", localtime(&(node->val.start)));
-		strftime(s2, 64, "%m-%d-%Y %H:%M", localtime(&(node->val.end)));
+		strftime(s1, 64, "%m-%d-%Y %H:%M", gmtime(&(node->val.start)));
+		strftime(s2, 64, "%m-%d-%Y %H:%M", gmtime(&(node->val.end)));
 		
 		RedisModuleString *argstr = RedisModule_CreateStringPrintf(NULL, "%s %.6f %.6f %s %s %s",
 												RedisModule_StringPtrLen(key, NULL),
@@ -868,11 +868,12 @@ extern "C" int RBTreeLookup_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **ar
 		return REDISMODULE_OK;
 	}
 
-
+	putenv(tz_envvar);
+	
 	char s1[64];
 	char s2[64];
-	strftime(s1, 64, datetime_fmt, localtime(&(idnode->val.start)));
-	strftime(s2, 64, datetime_fmt, localtime(&(idnode->val.end)));
+	strftime(s1, 64, datetime_fmt, gmtime(&(idnode->val.start)));
+	strftime(s2, 64, datetime_fmt, gmtime(&(idnode->val.end)));
 
 	RedisModuleString *replystr = RedisModule_CreateStringPrintf(ctx, "%s %f %f %s %s",
 											  RedisModule_StringPtrLen(idnode->val.descr, NULL),
@@ -1135,12 +1136,13 @@ int RBTreeQuery_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc
 		return REDISMODULE_ERR;
 	}
 
+	setenv("TZ", "GMT", 1);
 	char s1[64];
 	char s2[64];
 	RedisModule_ReplyWithArray(ctx, results.size());
 	for (RBNode *node : results){
-		strftime(s1, 64, datetime_fmt, localtime(&(node->val.start)));
-		strftime(s2, 64, datetime_fmt, localtime(&(node->val.end)));
+		strftime(s1, 64, datetime_fmt, gmtime(&(node->val.start)));
+		strftime(s2, 64, datetime_fmt, gmtime(&(node->val.end)));
 		RedisModuleString *resp = RedisModule_CreateStringPrintf(ctx, out_fmt,
 									RedisModule_StringPtrLen(node->val.descr, NULL),
 									node->val.id, node->val.x, node->val.y, s1, s2);
