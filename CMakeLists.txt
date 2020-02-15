@@ -1,12 +1,12 @@
 cmake_minimum_required(VERSION 3.0)
 
-project(Reventis VERSION 0.2.0 DESCRIPTION "spatio-temporal event index")
+project(Reventis VERSION 0.3.0 DESCRIPTION "spatio-temporal event index")
 include(ExternalProject)
 
 set(MODULE_SRCS rbtree_redis.cpp spfc.cpp)
 set(CMAKE_INSTALL_PREFIX /var/local)
 
-set(CMAKE_BUILD_TYPE RELWITHDEBINFO)
+set(CMAKE_BUILD_TYPE DEBUG)
 
 add_library(reventis MODULE ${MODULE_SRCS})
 set_target_properties(reventis PROPERTIES PREFIX "")

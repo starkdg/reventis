@@ -117,18 +117,18 @@ bool contains(const QueryRegion qr, const Value val){
 
 /* cast a query in terms of the spfc function */
 int cast_query_region(const QueryRegion qr, Region &r){
-	r.lower[0] = static_cast<uint32_t>((qr.x_lower + 180.0)*LONG_LAT_SCALE_FACTOR);
-	r.lower[1] = static_cast<uint32_t>((qr.y_lower + 90.0)*LONG_LAT_SCALE_FACTOR);
-	r.lower[2] = static_cast<uint32_t>(qr.t_lower);
-	r.upper[0] = static_cast<uint32_t>((qr.x_upper + 180.0)*LONG_LAT_SCALE_FACTOR);
-	r.upper[1] = static_cast<uint32_t>((qr.y_upper + 90.0)*LONG_LAT_SCALE_FACTOR);
-	r.upper[2] = static_cast<uint32_t>(qr.t_upper);
+	r.lower[0] = static_cast<uint64_t>((qr.x_lower + 180.0)*LONG_LAT_SCALE_FACTOR);
+	r.lower[1] = static_cast<uint64_t>((qr.y_lower + 90.0)*LONG_LAT_SCALE_FACTOR);
+	r.lower[2] = static_cast<uint64_t>(qr.t_lower);
+	r.upper[0] = static_cast<uint64_t>((qr.x_upper + 180.0)*LONG_LAT_SCALE_FACTOR);
+	r.upper[1] = static_cast<uint64_t>((qr.y_upper + 90.0)*LONG_LAT_SCALE_FACTOR);
+	r.upper[2] = static_cast<uint64_t>(qr.t_upper);
 	return 0;
 }
 
 int ParseLongLat(RedisModuleString *xstr, RedisModuleString *ystr, double &x, double &y){
 	if (RedisModule_StringToDouble(xstr, &x) == REDISMODULE_ERR)
-		return REDISMODULE_ERR;
+		return -1;
 	if (RedisModule_StringToDouble(ystr, &y) == REDISMODULE_ERR)
 		return -1;
 	return 0;
@@ -138,7 +138,6 @@ int ParseDateTime(RedisModuleString *datestr, RedisModuleString *timestr, time_t
 	const char *ptr = RedisModule_StringPtrLen(datestr, NULL);
 	const char *ptr2 = RedisModule_StringPtrLen(timestr, NULL);
 	if (ptr == NULL || ptr2 == NULL) return -1;
-
 
 	setenv("TZ", "GMT", 1);
 	
@@ -554,8 +553,8 @@ extern "C" void* RBTreeTypeRdbLoad(RedisModuleIO *rdb, int encver){
 		val.id = RedisModule_LoadSigned(rdb);
 		val.obj_id = RedisModule_LoadSigned(rdb);
 		val.cat = RedisModule_LoadUnsigned(rdb);
-		val.start = static_cast<time_t>(RedisModule_LoadUnsigned(rdb));
-		val.end = static_cast<time_t>(RedisModule_LoadUnsigned(rdb));
+		val.start = static_cast<time_t>(RedisModule_LoadSigned(rdb));
+		val.end = static_cast<time_t>(RedisModule_LoadSigned(rdb));
 		val.descr = RedisModule_LoadString(rdb);
 
 		if (RBTreeInsert(tree, s, val) < 0){
@@ -594,8 +593,8 @@ extern "C" void RBTreeTypeRdbSave(RedisModuleIO *rdb, void *value){
 		RedisModule_SaveUnsigned(rdb, node->val.cat);
 		
 		// time start/end
-		RedisModule_SaveUnsigned(rdb, node->val.start);
-		RedisModule_SaveUnsigned(rdb, node->val.end);
+		RedisModule_SaveSigned(rdb, node->val.start);
+		RedisModule_SaveSigned(rdb, node->val.end);
 
 		// title string
 		RedisModule_SaveString(rdb, node->val.descr);
@@ -729,9 +728,9 @@ extern "C" int RBTreeInsert_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **ar
 	}
 
 	Point pnt;
-	pnt.arr[0] = static_cast<uint32_t>((x+180.0)*LONG_LAT_SCALE_FACTOR);
-	pnt.arr[1] = static_cast<uint32_t>((y+90.0)*LONG_LAT_SCALE_FACTOR);
-	pnt.arr[2] = static_cast<uint32_t>(t1);
+	pnt.arr[0] = static_cast<uint64_t>((x+180.0)*LONG_LAT_SCALE_FACTOR);
+	pnt.arr[1] = static_cast<uint64_t>((y+90.0)*LONG_LAT_SCALE_FACTOR);
+	pnt.arr[2] = static_cast<uint64_t>(t1);
 
 	RedisModule_RetainString(ctx, titlestr);
 	

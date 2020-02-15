@@ -117,42 +117,41 @@ bool contains(Region r, Seqn s){
 }
 
 /* set bit at bitpos */
-static void setbit(uint32_t arr[], const int bitpos){
-	assert(bitpos >= 0 && bitpos < DIMS*32);
-	arr[bitpos/32] |= (0x80000000 >> (bitpos % 32));
+static void setbit(uint64_t arr[], const int bitpos){
+	assert(bitpos >= 0 && bitpos < DIMS*64);
+	arr[bitpos/64] |= (0x8000000000000000ULL >> (bitpos % 64));
 }
 
 /* clear bits from [bitpos, end] */
-static void clearbits(uint32_t arr[], const int bitpos){
-	assert(bitpos >= 0 && bitpos < DIMS*32);
-	arr[bitpos/32] &= ~(0xffffffff >> (bitpos%32));
-	for (int i=bitpos/32+1;i < DIMS;i++)
-		arr[i] = 0;
+static void clearbits(uint64_t arr[], const int bitpos){
+	assert(bitpos >= 0 && bitpos < DIMS*64);
+	arr[bitpos/64] &= ~(0xffffffffffffffffULL >> (bitpos%64));
+	for (int i=bitpos/64+1;i < DIMS;i++) arr[i] = 0;
 }
 
 /* get bit at bitpos */
-static bool getbit(const uint32_t arr[], const int bitpos){
-	assert(bitpos >= 0 && bitpos < DIMS*32);
-	return ((arr[bitpos/32] & (0x80000000 >> (bitpos % 32))) != 0);
+static bool getbit(const uint64_t arr[], const int bitpos){
+	assert(bitpos >= 0 && bitpos < DIMS*64);
+	return ((arr[bitpos/64] & (0x8000000000000000ULL >> (bitpos % 64))) != 0);
 }
 
 int spfc_encode(const Point &p, Seqn &sn){
-	uint32_t coords[DIMS];
+	uint64_t coords[DIMS];
 	for (int i=0;i<DIMS;i++){
-		coords[i] = p.arr[i] << (32-ORDER);
+		coords[i] = p.arr[i] << (64-ORDER);
 		sn.arr[i] = 0;
 	}
 
 	int level = 0;
 	int state = 0;
-	const uint32_t bitmask = 0x80000000;
+	const uint64_t bitmask = 0x8000000000000000ULL;
 
-	int pos = 32*DIMS - ORDER*DIMS;
+	int pos = 64*DIMS - ORDER*DIMS;
 	while (level < ORDER) {
 		int npoint = 0;
 		int coord_index = DIMS-1;
-		for (int i=31;i > 31-DIMS;i--){
-			npoint |= (coords[coord_index--] & bitmask) >> i;
+		for (int i=63;i > 63-DIMS;i--){
+			npoint |= (int)((coords[coord_index--] & bitmask) >> i);
 		}
 		int s = seqnums[state][npoint];
 
@@ -179,13 +178,13 @@ int spfc_encode(const Point &p, Seqn &sn){
 }
 
 int spfc_decode(const Seqn &s, Point &p){
-	uint32_t coords[DIMS];
+	uint64_t coords[DIMS];
 	for (int i=0;i<DIMS;i++){
 		p.arr[i] = 0;
 		coords[i] = 0;
 	}
 	
-	int level = 0, state = 0, pos = 32*DIMS - ORDER*DIMS;
+	int level = 0, state = 0, pos = 64*DIMS - ORDER*DIMS;
 	while (level < ORDER){
 		int d = 0;
 
@@ -204,7 +203,7 @@ int spfc_decode(const Seqn &s, Point &p){
 
 		mask = 0x01;
 		int coord_index = DIMS-1;
-		for (int i=31;i>31-DIMS;i--){
+		for (int i=63;i>63-DIMS;i--){
 			if (i - level >= 0)
 				coords[coord_index--] |= (npnt & mask) << (i - level);
 			else
@@ -218,7 +217,7 @@ int spfc_decode(const Seqn &s, Point &p){
 	}
 
 	for (int i=0;i<DIMS;i++){
-		coords[i] >>= 32 - ORDER;
+		coords[i] >>= 64 - ORDER;
 		p.arr[i] = coords[i];
 	}
 
@@ -228,12 +227,12 @@ int spfc_decode(const Seqn &s, Point &p){
 static int extractnpoints(const Region &r, const int level, int &ql, int &qu){
 	assert(level >= 0 && level < ORDER);
 
-	int pos = 32 - ORDER + level;
+	int pos = 64 - ORDER + level;
 	ql = qu = 0;
 	int mask = 0x01 << (DIMS-1);
 	for (int i=0;i<DIMS;i++){
-		if (r.lower[i] & (0x80000000 >> pos)) ql |= mask;
-		if (r.upper[i] & (0x80000000 >> pos)) qu |= mask;
+		if (r.lower[i] & (0x8000000000000000ULL >> pos)) ql |= mask;
+		if (r.upper[i] & (0x8000000000000000ULL >> pos)) qu |= mask;
 		mask >>= 1;
 	}
 		
@@ -241,7 +240,7 @@ static int extractnpoints(const Region &r, const int level, int &ql, int &qu){
 }
 
 static int extractsubseqn(const Seqn s, const int pos, int &hkey){
-	assert(pos >= 32*DIMS - DIMS*ORDER && pos < 32*DIMS);
+	assert(pos >= 64*DIMS - DIMS*ORDER && pos < 64*DIMS);
 	
 	hkey = 0;
 	int mask = 0x01 << (DIMS-1);
@@ -258,7 +257,7 @@ static int restrict_search_region(Region &s, int quadr){
 
 	int mask = 0x01 << (DIMS-1);
 	for (int i=0;i<DIMS;i++){
-		int diff = (s.upper[i] - s.lower[i])/2 + 1;
+		int64_t diff = (s.upper[i] - s.lower[i])/2 + 1;
 		if (quadr & mask){
 			s.lower[i] += diff;
 		} else {
@@ -287,7 +286,7 @@ static int restrict_search_region_by_half(Region &s, int pd, bool lower){
 	}
 	assert(i >= 0 && i < DIMS);
 	
-	int diff = (s.upper[i] - s.lower[i])/2 + 1;
+	int64_t diff = (s.upper[i] - s.lower[i])/2 + 1;
 
 	if (lower)
 		s.upper[i] -= diff;
@@ -431,7 +430,7 @@ static int select_quadrant(Region ss, Region qr, int h, stack<Record> &bt,
 static bool calc_next_match(Region ss, Region qr, const Seqn prev, Seqn &next){
 	stack<Record> bt;
 	vector<Region> sslist, qrlist;
-	int level = 0, state = 0, pos = 32*DIMS - ORDER*DIMS;
+	int level = 0, state = 0, pos = 64*DIMS - ORDER*DIMS;
 	
 	while (level < ORDER){
 		//printf("(level %d) state = %d, pos = %d\n", level, state, pos);
@@ -454,7 +453,7 @@ static bool calc_next_match(Region ss, Region qr, const Seqn prev, Seqn &next){
 				Record rec = bt.top();
 				level = rec.level;
 				state = rec.state;
-				pos = 32*DIMS - ORDER*DIMS + level*DIMS;
+				pos = 64*DIMS - ORDER*DIMS + level*DIMS;
 				h = rec.hkey;
 				ss = sslist[level];
 				qr = qrlist[level];
@@ -547,12 +546,12 @@ static bool calc_next_match(Region ss, Region qr, const Seqn prev, Seqn &next){
 }
 
 bool next_match(Region qr, const Seqn prevkey, Seqn &nextkey){
-	memset(nextkey.arr, 0, DIMS*sizeof(uint32_t));
+	memset(nextkey.arr, 0, DIMS*sizeof(uint64_t));
 	
 	Region ss;
 	for (int i=0;i<DIMS;i++){
 		ss.lower[i] = 0;
-		ss.upper[i] = 0xffffffffU >> (32-ORDER);
+		ss.upper[i] = 0xffffffffffffffffULL >> (64-ORDER);
 	}
 	return calc_next_match(ss, qr, prevkey, nextkey);
 }

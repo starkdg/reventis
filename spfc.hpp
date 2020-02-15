@@ -9,10 +9,10 @@ using namespace std;
 #define DIMS 3
 #define N 8
 #define NSTATES 12
-#define ORDER 32
+#define ORDER 64
 
 typedef struct point_t {
-	uint32_t arr[DIMS];
+	uint64_t arr[DIMS];
 	point_t(){
 		for (int i=0;i<DIMS;i++) arr[i] = 0;
 	}
@@ -29,33 +29,33 @@ typedef struct point_t {
 		int i = DIMS-1;
 		arr[i]++;
 		while (arr[i] == 0 && i > 0){
-			arr[i--]++;
+			arr[--i]++;
 		}
 
 		return *this;
 	}
 
-	friend bool operator==(const point_t &a, const point_t &b){
+	bool operator==(const point_t &other){
 		for (int i=0;i<DIMS;i++){
-			if (a.arr[i] != b.arr[i])
+			if (arr[i] != other.arr[i])
 				return false;
 		}
 		return true;
 	}
 
-	friend bool operator!=(const point_t &a, const point_t &b){
+	bool operator!=(const point_t &other){
 		for (int i=0;i<DIMS;i++){
-			if (a.arr[i] == b.arr[i])
+			if (arr[i] == other.arr[i])
 				return false;
 		}
 		return true;
 	}
 	
-	friend bool operator<(const point_t &a, const point_t &b){
+	bool operator<(const point_t &other){
 		for (int i=0;i<DIMS;i++){
-			if (a.arr[i] < b.arr[i])
+			if (arr[i] < other.arr[i])
 				return true;
-			else if (a.arr[i] > b.arr[i])
+			else if (arr[i] > other.arr[i])
 				return false;
 		}
 		return false;
@@ -65,12 +65,12 @@ typedef struct point_t {
 typedef Point Seqn;
 
 typedef struct region_t {
-	uint32_t lower[DIMS];
-	uint32_t upper[DIMS];
+	uint64_t lower[DIMS];
+	uint64_t upper[DIMS];
 
 	region_t(){
-		memset(lower, 0, DIMS*sizeof(uint32_t));
-		memset(upper, 0, DIMS*sizeof(uint32_t));
+		memset(lower, 0, DIMS*sizeof(uint64_t));
+		memset(upper, 0, DIMS*sizeof(uint64_t));
 	}
 	region_t(const region_t &other){
 		for (int i=0;i<DIMS;i++){

@@ -30,9 +30,9 @@ int test_query_region(const Region qr){
 	}
 
 	// check each value in query region 
-	for (uint32_t i=qr.lower[0];i <= qr.upper[0];i++){
-		for (uint32_t j=qr.lower[1];j <= qr.upper[1];j++){
-			for (uint32_t k=qr.lower[2];k <= qr.upper[2];k++){
+	for (uint64_t i=qr.lower[0];i <= qr.upper[0];i++){
+		for (uint64_t j=qr.lower[1];j <= qr.upper[1];j++){
+			for (uint64_t k=qr.lower[2];k <= qr.upper[2];k++){
 				Point p;
 				p.arr[0] = i;
 				p.arr[1] = j;
@@ -97,7 +97,7 @@ int main(int argc, char **argv){
 	
 	n = test_query_region(qr);
 	printf("n = %d\n", n);
-	assert(n = 10641);
+	assert(n = 10534);
 	
 	return 0;
 }
