@@ -6,9 +6,9 @@
 
 using namespace std;
 
-#define DIMS 3
-#define N 8
-#define NSTATES 12
+#define DIMS 4
+#define N 16
+#define NSTATES 32
 #define ORDER 64
 
 typedef struct point_t {

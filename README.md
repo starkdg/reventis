@@ -19,6 +19,9 @@ The second precision is optional.
 
 * Delete a block of events in a certain range.
 
+* Basic object tracking (since v0.3.0) with the ability to update coordinates
+  for specific object ids,  query for all objects that fall in a specific location
+  and time limits, or query for all locations of an object.  
 
 ## Installation Instructions
 

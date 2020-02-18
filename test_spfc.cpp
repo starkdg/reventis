@@ -10,7 +10,7 @@ using namespace std;
 
 void print_query_region(const Region qr){
 	for (int i=0;i<DIMS;i++){
-		printf("%u to %u\n", qr.lower[i], qr.upper[i]);
+		printf("%llu to %llu\n", qr.lower[i], qr.upper[i]);
 	}
 	printf("\n");
 }
@@ -79,11 +79,13 @@ int main(int argc, char **argv){
 	qr.upper[1] = 25000050;
 	qr.lower[2] = 3000500;
 	qr.upper[2] = 3000550;
+	qr.lower[3] = 0;
+	qr.upper[3] = 0;
 	print_query_region(qr);
 	
 	int n = test_query_region(qr);
 	printf("n = %d\n", n);
-	assert(n == 947);
+	assert(n == 15863);
 
 
 	Region qr2;
@@ -93,11 +95,13 @@ int main(int argc, char **argv){
 	qr.upper[1] = 55200;
 	qr.lower[2] = 5000;
 	qr.upper[2] = 5050;
+	qr.lower[3] = 0;
+	qr.upper[3] = 0;
 	print_query_region(qr);
 	
 	n = test_query_region(qr);
 	printf("n = %d\n", n);
-	assert(n = 10534);
+	assert(n = 262383);
 	
 	return 0;
 }
