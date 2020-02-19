@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cassert>
 #include <limits>
+#include <algorithm>
 #include "spfc.hpp"
 #include "redismodule.h"
 
@@ -94,6 +95,10 @@ typedef struct node_state_t {
 } NodeSt;
 
 /*================ Aux. functions ======================================= */
+
+bool rbnode_cmp(const RBNode *nodeA, const RBNode *nodeB) {
+		return (nodeA->val.start < nodeB->val.start);
+}
 
 int GetNodeCount(RBNode *h){
 	if (h == NULL) return 0;
@@ -841,7 +846,7 @@ int RBTreeUpdateObject_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, i
 	val.id = event_id;
 	val.obj_id = object_id;
 	val.start = t;
-	val.end = -1;
+	val.end = t;
 	val.descr = argv[7];
 
 	RBTree *tree = NULL;
@@ -1045,9 +1050,11 @@ int RBTreePurge_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc
 	qr.x_upper = 180.0;
 	qr.y_lower = -90.0;
 	qr.y_upper = 90.0;
-	qr.t_lower = 0;
+	qr.t_lower = numeric_limits<time_t>::min();
 	qr.t_upper = t;
-
+	qr.id_lower = 0;
+	qr.id_upper = numeric_limits<long long>::max();
+	
 	RBTree *tree = NULL;
 	try {
 		tree = GetRBTree(ctx, keystr);
@@ -1134,7 +1141,9 @@ int RBTreeDelBlk_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int arg
 	qr.y_upper = y2;
 	qr.t_lower = t1;
 	qr.t_upper = t2;
-
+	qr.id_lower = 0;
+	qr.id_upper = numeric_limits<long long>::max();
+	
 	vector<RBNode*> results;
 	unsigned long long cat_flag = 0;
 	if (RBTreeQuery(tree, qr, results, cat_flag) < 0){
@@ -1152,6 +1161,58 @@ int RBTreeDelBlk_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int arg
 	RedisModule_ReplyWithLongLong(ctx, results.size());
 	RedisModule_ReplicateVerbatim(ctx);
 
+	return REDISMODULE_OK;
+}
+
+/* args: key obj_id */
+int RBTreeDelObj_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc){
+	if (argc < 3) return RedisModule_WrongArity(ctx);
+	RedisModule_AutoMemory(ctx);
+
+	long long object_id = 0;
+	if (RedisModule_StringToLongLong(argv[2], &object_id) == REDISMODULE_ERR || object_id <= 0){
+		RedisModule_ReplyWithError(ctx, "ERR - unable to parse object id arg");
+		return REDISMODULE_ERR;
+	}
+
+	RBTree *tree = NULL;
+	try {
+		tree = GetRBTree(ctx, argv[1]);
+		if (tree == NULL){
+			RedisModule_ReplyWithError(ctx, "ERR - no such key");
+			return REDISMODULE_ERR;
+		}
+	} catch (int &e){
+		RedisModule_ReplyWithError(ctx, "key already exists for different type");
+		return REDISMODULE_ERR;
+	}
+
+	QueryRegion qr;
+	qr.x_lower = -180.0;
+	qr.x_upper = 180.0;
+	qr.y_lower = -90.0;
+	qr.y_upper = 90.0;
+	qr.t_lower = numeric_limits<time_t>::min();
+	qr.t_upper = numeric_limits<time_t>::max();
+	qr.id_lower = object_id;
+	qr.id_upper = object_id;
+	
+	vector<RBNode*> results;
+	unsigned long long cat_flag = 0;
+	if (RBTreeQuery(tree, qr, results, cat_flag) < 0){
+		RedisModule_ReplyWithNull(ctx);
+		return REDISMODULE_ERR;
+	}
+
+	for (RBNode *node : results){
+		if (RBTreeDelete(ctx, tree, node->s, node->val.id) < 0){
+			RedisModule_ReplyWithError(ctx, "ERR - unable to delete");
+			return REDISMODULE_ERR;
+		}
+	}
+
+	RedisModule_ReplyWithLongLong(ctx, results.size());
+	RedisModule_ReplicateVerbatim(ctx);
 	return REDISMODULE_OK;
 }
 
@@ -1274,10 +1335,15 @@ int RBTreeQueryAllObjects_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv
 	}
 
 	if (x1 < -180.0 || x1 > 180.0 || x2 < -180.0 || x2 > 180.0){
-		RedisModule_ReplyWithError(ctx, "ERR - longitude/latitude arg values out of range");
+		RedisModule_ReplyWithError(ctx, "ERR - longitude arg values out of range");
 		return REDISMODULE_ERR;
 	}
 
+	if (y1 < -90.0 || y1 > 90.0 || y2 < -90.0 || y2 > 90.0){
+		RedisModule_ReplyWithError(ctx, "ERR - latitude arg values out of range");
+		return REDISMODULE_ERR;
+	}
+	
 	time_t t1, t2;
 	if (ParseDateTime(argv[6], argv[7], t1) < 0){
 		RedisModule_ReplyWithError(ctx, "ERR - Unable to parse lower date time arg values");
@@ -1309,9 +1375,9 @@ int RBTreeQueryAllObjects_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv
 	qr.t_lower = t1;
 	qr.t_upper = t2;
 	qr.id_lower = 1;
-	qr.id_upper = numeric_limits<uint64_t>::max();
+	qr.id_upper = numeric_limits<long long>::max();
 	
-	const char *out_fmt = "title: %s id: %lld %f/%f %s to %s";
+	const char *out_fmt = "title: %s obj_id: %lld longititude = %f latitude = %f %s";
 	
 	vector<RBNode*> results;
 	if (RBTreeQuery(tree, qr, results, cat_flag) < 0){
@@ -1319,15 +1385,15 @@ int RBTreeQueryAllObjects_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv
 		return REDISMODULE_ERR;
 	}
 
+	sort(results.begin(), results.end(), rbnode_cmp);
+	
 	char s1[64];
-	char s2[64];
 	RedisModule_ReplyWithArray(ctx, results.size());
 	for (RBNode *node : results){
 		strftime(s1, 64, datetime_fmt, gmtime(&(node->val.start)));
-		strftime(s2, 64, datetime_fmt, gmtime(&(node->val.end)));
 		RedisModuleString *resp = RedisModule_CreateStringPrintf(ctx, out_fmt,
 									RedisModule_StringPtrLen(node->val.descr, NULL),
-									node->val.id, node->val.x, node->val.y, s1, s2);
+									node->val.obj_id, node->val.x, node->val.y, s1);
 		RedisModule_ReplyWithString(ctx, resp);
 	}
 	
@@ -1373,13 +1439,8 @@ int RBTreeQueryByObject_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, 
 	}
 
 	long long object_id;
-	if (RedisModule_StringToLongLong(argv[10], &object_id) == REDISMODULE_ERR){
+	if (RedisModule_StringToLongLong(argv[10], &object_id) == REDISMODULE_ERR || object_id <= 0){
 		RedisModule_ReplyWithError(ctx, "ERR - Unable to parse object id value");
-		return REDISMODULE_ERR;
-	}
-
-	if (object_id <= 0){
-		RedisModule_ReplyWithError(ctx, "ERR - object id value out of range");
 		return REDISMODULE_ERR;
 	}
 	
@@ -1412,13 +1473,17 @@ int RBTreeQueryByObject_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, 
 		return REDISMODULE_ERR;
 	}
 
+	sort(results.begin(), results.end(), rbnode_cmp);
+
 	char s1[64];
-	const char *fmt = "obj = %lld id = %lld long./lat. = %f/%f time = %s";
+	const char *fmt = "%s obj = %lld id = %lld long./lat. = %f/%f time = %s";
 
 	RedisModule_ReplyWithArray(ctx, results.size());
 	for (RBNode *node : results){
 		strftime(s1, 64, datetime_fmt, gmtime(&(node->val.start)));
-		RedisModuleString *resp = RedisModule_CreateStringPrintf(ctx, fmt, node->val.obj_id, node->val.id,
+		RedisModuleString *resp = RedisModule_CreateStringPrintf(ctx, fmt,
+																 RedisModule_StringPtrLen(node->val.descr, NULL),
+																 node->val.obj_id, node->val.id,
 																 node->val.x, node->val.y, s1);
 		RedisModule_ReplyWithString(ctx, resp);
 	}
@@ -1427,6 +1492,73 @@ int RBTreeQueryByObject_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, 
 	auto elapsed = chrono::duration_cast<chrono::microseconds>(end - start).count();
 	unsigned int dur = elapsed;
 	RedisModule_Log(ctx, "debug", "tracking time - %u microseconds", dur);
+	return REDISMODULE_OK;
+}
+
+/* args: key object_id */
+int RBTreeQueryObjectHistory_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc){
+	if (argc < 3) return RedisModule_WrongArity(ctx);
+	RedisModule_AutoMemory(ctx);
+
+	chrono::time_point<chrono::high_resolution_clock> start = chrono::high_resolution_clock::now();
+
+	RedisModuleString *keystr = argv[1];
+	RedisModuleString *objstr = argv[2];
+
+	long long object_id;
+	if (RedisModule_StringToLongLong(objstr, &object_id) == REDISMODULE_ERR || object_id <= 0){
+		RedisModule_ReplyWithError(ctx, "ERR - Unable to parse object id value");
+		return REDISMODULE_ERR;
+	}
+
+	RBTree *tree = NULL;
+	try {
+		tree = GetRBTree(ctx, argv[1]);
+		if (tree == NULL){
+			RedisModule_ReplyWithError(ctx, "ERR - No such key");
+			return REDISMODULE_ERR;
+		}
+	} catch (int &e){
+		RedisModule_ReplyWithError(ctx, "key already exists for different type");
+		return REDISMODULE_ERR;
+	}
+
+	QueryRegion qr;
+	qr.x_lower = -180.0;
+	qr.x_upper = 180.0;
+	qr.y_lower = -90.0;
+	qr.y_upper = 90.0;
+	qr.t_lower = numeric_limits<time_t>::min();
+	qr.t_upper = numeric_limits<time_t>::max();
+	qr.id_lower = object_id;
+	qr.id_upper = object_id;
+
+	vector<RBNode*> results;
+	unsigned long long cat_flag = 0;
+	if (RBTreeQuery(tree, qr, results, cat_flag) < 0){
+		RedisModule_ReplyWithError(ctx, "Err - Unable to query");
+		return REDISMODULE_ERR;
+	}
+
+	sort(results.begin(), results.end(), rbnode_cmp);
+	
+	char s1[64];
+	const char *fmt = "%s obj = %lld id = %lld long./lat. = %f/%f time = %s";
+
+	RedisModule_ReplyWithArray(ctx, results.size());
+	for (RBNode *node : results){
+		strftime(s1, 64, datetime_fmt, gmtime(&(node->val.start)));
+		RedisModuleString *resp = RedisModule_CreateStringPrintf(ctx, fmt,
+																 RedisModule_StringPtrLen(node->val.descr, NULL),
+																 node->val.obj_id, node->val.id,
+																 node->val.x, node->val.y, s1);
+		RedisModule_ReplyWithString(ctx, resp);
+	}
+	
+	chrono::time_point<chrono::high_resolution_clock> end = chrono::high_resolution_clock::now();
+	auto elapsed = chrono::duration_cast<chrono::microseconds>(end - start).count();
+	unsigned int dur = elapsed;
+	RedisModule_Log(ctx, "debug", "object history in %u microseconds", dur);
 	return REDISMODULE_OK;
 }
 
@@ -1505,9 +1637,6 @@ extern "C" int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv,
 								  "write deny-oom fast", 1, 1, 1) == REDISMODULE_ERR)
 		return REDISMODULE_ERR;
 
-	if (RedisModule_CreateCommand(ctx, "reventis.update", RBTreeUpdateObject_RedisCmd,
-								  "write deny-oom fast", 1, 1, 1) == REDISMODULE_ERR);
-	
 	if (RedisModule_CreateCommand(ctx, "reventis.addcategory", RBTreeAddCategory_RedisCmd,
 								  "write fast", 1, 1, 1) == REDISMODULE_ERR)
 		return REDISMODULE_ERR;
@@ -1535,14 +1664,6 @@ extern "C" int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv,
 								  "readonly", 1, 1, 1) == REDISMODULE_ERR)
 		return REDISMODULE_ERR;
 
-	if (RedisModule_CreateCommand(ctx, "reventis.track", RBTreeQueryByObject_RedisCmd,
-								  "readonly", 1, 1, 1) == REDISMODULE_ERR)
-		return REDISMODULE_ERR;
-
-	if (RedisModule_CreateCommand(ctx, "reventis.trackall", RBTreeQueryAllObjects_RedisCmd,
-								  "readonly", 1, 1, 1) == REDISMODULE_ERR)
-		return REDISMODULE_ERR;
-	
 	if (RedisModule_CreateCommand(ctx, "reventis.print", RBTreePrint_RedisCmd,
 								  "readonly", 1, 1, 1) == REDISMODULE_ERR)
 		return REDISMODULE_ERR;
@@ -1555,6 +1676,27 @@ extern "C" int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv,
 								  "readonly fast", 1, 1, 1) == REDISMODULE_ERR)
 		return REDISMODULE_ERR;
 	
+	/* object tracking api */
+	if (RedisModule_CreateCommand(ctx, "reventis.update", RBTreeUpdateObject_RedisCmd,
+								  "write deny-oom fast", 1, 1, 1) == REDISMODULE_ERR);
+
+	if (RedisModule_CreateCommand(ctx, "reventis.track", RBTreeQueryByObject_RedisCmd,
+								  "readonly", 1, 1, 1) == REDISMODULE_ERR)
+		return REDISMODULE_ERR;
+
+	if (RedisModule_CreateCommand(ctx, "reventis.trackall", RBTreeQueryAllObjects_RedisCmd,
+								  "readonly", 1, 1, 1) == REDISMODULE_ERR)
+		return REDISMODULE_ERR;
+
+	if (RedisModule_CreateCommand(ctx, "reventis.hist", RBTreeQueryObjectHistory_RedisCmd,
+								  "readonly", 1, 1, 1) == REDISMODULE_ERR)
+		return REDISMODULE_ERR;
+
+
+	if (RedisModule_CreateCommand(ctx, "reventis.delobj", RBTreeDelObj_RedisCmd,
+								  "write deny-oom", 1, 1, 1) == REDISMODULE_ERR)
+		return REDISMODULE_ERR;
+
 	return REDISMODULE_OK;
 }
 
