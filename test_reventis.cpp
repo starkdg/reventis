@@ -364,6 +364,9 @@ int main(int argc, char **argv){
 	int n = LoadEvents(c, key, event_file);
 	assert(n == 373);
 
+	n = GetNumberEvents(c, key);
+	assert(n == 373);
+	
 	AddCategoryForId(c, key, 11, 1, 1);
 	AddCategoryForId(c, key, 12, 2, 1, 2);
 	AddCategoryForId(c, key, 13, 3, 1, 2, 3);
@@ -394,7 +397,11 @@ int main(int argc, char **argv){
 
 	n = LoadObjects(c, key, object_file);
 	assert(n == 63);
-	
+
+	n = GetNumberEvents(c, key);
+	assert(n == 373 + 63);
+
+	/* query for clusters of data */
 	double x1 = -72.338000;
 	double x2 = -72.330000;
 	double y1 = 41.571000;
@@ -415,8 +422,6 @@ int main(int argc, char **argv){
 	n = Query(c, key, x1, x2, y1, y2, date, starttime, date, endtime, 1, 3);
 	assert(n == 1);
 
-
-	/* second cluster */
 	x1 = -72.218815;
 	x2 = -72.217520;
 	y1 = 41.719640;
@@ -556,18 +561,33 @@ int main(int argc, char **argv){
 	endtime = "12:00";
 	n = DeleteBlock(c, key, x1, x2, y1, y2, date, starttime, enddate, endtime);
 	assert(n == 11);
+
+	n = GetNumberEvents(c, key);
+	assert(n == 425);
 	
 	date = "05-01-2019";
 	starttime = "00:00";
 	n = Purge(c, key, date, starttime);
 	assert(n == 10);
 
+	n = GetNumberEvents(c, key);
+	assert(n == 415);
+	
 	n = DeleteObject(c, key, 150);
 	assert(n == 12);
-	
+
+	n = GetNumberEvents(c, key);
+	assert(n == 403);
+
 	n = DeleteObject(c, key, 10);
 	assert(n == 17);
 
+	n = GetNumberEvents(c, key);
+	assert(n == 386);
+
+	rc = FlushAllEvents(c, key);
+	assert(rc == 0);
+	
 	redisFree(c);
 	return 0;
 }
