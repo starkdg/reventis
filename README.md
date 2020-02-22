@@ -3,7 +3,7 @@
 A Redis module for indexing events by location and time for fast efficient
 range query.  Spatial coordinates are given in longitude and latitude with
 up to 6 digits of precision. Time is specified by strings - e.g. HH:MM[:SS]
-The second precision is optional.
+The seconds precision is optional.
 
 ## Features
 
@@ -12,16 +12,16 @@ The second precision is optional.
 
 * Efficient range query.  Get all results within a specified range.
 
-* Add/remove categories to individual events.  Include only results
+* Add/remove categories on individual events.  Include only results
   in a range query that fall in certain specified categories.  
-
+  
 * Purge all that events that fall before a specific time stamp.
 
 * Delete a block of events in a certain range.
 
 * Basic object tracking (since v0.3.0) with the ability to update coordinates
   for specific object ids,  query for all objects that fall in a specific location
-  and time limits, or query for all locations of an object.  
+  and time limits, or query for history of an object.   
 
 ## Installation Instructions
 
@@ -86,6 +86,14 @@ Then, query like this.  Just specify any variable number of categories on the en
 reventis.query key <longitude range> <latitude range> <time-range> <category-id> ...
 ```
 
+The object trackign api includes these functions:
+
+```
+reventis.update <key> <longitude> <latitude> <date> <time> <object_id> <description>
+reventis.track <key> <longitude-range> <latitude-range> <time-range> <object_id>
+reventis.trackall <key> <longitude-range> <latitude-range> <time-range>
+reventis.hist <key> <object_id>
+```
 
 The first argument is always the name of the index - e.g. "myevents".  All inserted events belong to
 a particular index structure. Multiple structures are possible.  
