@@ -6,6 +6,7 @@
 #include <cstring>
 #include <ctime>
 #include <algorithm>
+#include <random>
 #include <cassert>
 #include <unistd.h>
 #include "hiredis.h"
@@ -71,10 +72,10 @@ int gentimes(string &startdate, string &starttime, string &enddate, string &endt
 }
 
 int GenerateEvents(redisContext *c, const string &key, const int n){
-	char cmd[128];
 	int count = 0;
 	redisReply *reply = NULL;
-
+	const char *cmd_fmt = "reventis.insert %s %f %f %s %s %s %s %s";
+	
 	while (count < n){
 		double x,  y;
 		genlonglat(x, y);
@@ -87,11 +88,8 @@ int GenerateEvents(redisContext *c, const string &key, const int n){
 		
 		string descr = "\"Event ID # " + to_string(tag_num) + "\"";
 
-		snprintf(cmd, 128, "reventis.insert %s %f %f %s %s %s %s %s",
-				 key.c_str(), x, y, d1.c_str(), t1.c_str(),
-				 d2.c_str(), t2.c_str(), descr.c_str());
-
-		reply = (redisReply*)redisCommand(c, cmd);
+		reply = (redisReply*)redisCommand(c, cmd_fmt, key.c_str(), x, y, d1.c_str(), t1.c_str(),
+										  d2.c_str(), t2.c_str(), descr.c_str());
 
 		if (reply && reply->type == REDIS_REPLY_INTEGER){
 			count++;
@@ -134,23 +132,43 @@ int parse_event(string line, Entry &entry){
 	return 0;
 }
 
+int parse_object(string line, Entry &entry){
+	string word;
+	stringstream ss(line);
+	getline(ss, word, ',');
+	entry.object_id = atoi(word.c_str());
+	getline(ss, word, ',');
+	entry.longitude = atof(word.c_str());
+	getline(ss, word, ',');
+	entry.latitude = atof(word.c_str());
+	getline(ss, entry.date, ',');
+	getline(ss, entry.starttime, ',');
+	getline(ss, entry.descr);
+	return 0;
+}
 
 int LoadEvents(redisContext *c, const string &key, const string &file){
 	ifstream input(file);
 	redisReply *reply;
-	
+	const char *cmd_fmt = "reventis.insert %s %f %f %s %s %s %s %s";
+
 	char cmd[128];
 	int count = 0;
 	for (string line; getline(input, line);){
 		Entry e;
 		parse_event(line, e);
 
-		snprintf(cmd, 128, "reventis.insert %s %f %f %s %s %s %s %s",
-				 key.c_str(), e.longitude, e.latitude, e.date.c_str(), e.starttime.c_str(),
-				 e.date.c_str(), e.endtime.c_str(), e.descr.c_str());
+		snprintf(cmd, 128, cmd_fmt, key.c_str(), e.longitude, e.latitude,
+				 e.date.c_str(), e.starttime.c_str(),
+				 e.date.c_str(), e.endtime.c_str(),
+				 e.descr.c_str());
 
 		cout << "send => " << cmd << endl;
-		reply = (redisReply*)redisCommand(c, cmd);
+		reply = (redisReply*)redisCommand(c, cmd_fmt, key.c_str(),
+										  e.longitude, e.latitude,
+										  e.date.c_str(), e.starttime.c_str(),
+										  e.date.c_str(), e.endtime.c_str(),
+										  e.descr.c_str());
 
 		if (reply && reply->type == REDIS_REPLY_INTEGER){
 			count++;
@@ -173,20 +191,22 @@ int LoadEvents(redisContext *c, const string &key, const string &file){
 int LoadObjects(redisContext *c, const string &key, const string &file){
 	ifstream input(file);
 	redisReply *reply;
-
+	const char *cmd_fmt = "reventis.update %s %f %f %s %s %ld %s";
+	
 	char cmd[128];
 	int count = 0;
 	for (string line; getline(input, line);){
 		Entry e;
 		parse_object(line, e);
 
-		snprintf(cmd, 128, "reventis.update %s %f %f %s %s %ld %s",
-				 key.c_str(), e.longitude, e.latitutde,
-				 e.date.c_str(), e.starttime.c_str(),
-				 e.object_id, e.descr.c_str());
+		snprintf(cmd, 128, cmd_fmt, key.c_str(), e.longitude, e.latitude,
+				 e.date.c_str(), e.starttime.c_str(), e.object_id, e.descr.c_str());
 
 		cout << "send => " << cmd << endl;
-		reply = (redisReply*)redisCommand(c, cmd);
+		reply = (redisReply*)redisCommand(c, cmd_fmt, key.c_str(), e.longitude, e.latitude,
+										  e.date.c_str(), e.starttime.c_str(),
+										  e.object_id, e.descr.c_str());
+		
 		if (reply && reply->type == REDIS_REPLY_INTEGER){
 			count++;
 			cout << "reply => event id = " << reply->integer << endl;
@@ -208,20 +228,23 @@ int LoadObjects(redisContext *c, const string &key, const string &file){
 int main(int argc, char **argv){
 	if (argc < 4){
 		cout << "not enough args" << endl;
-		cout << "./load key file [events|objects|gen] [n]" << endl;
-		cout << "file - file containing events or objects" << endl;
+		cout << "./load key [events|objects|gen] [file|n]" << endl;
+		cout << "key  - key string for redis database" << endl;
 		cout << "opt  - events - file contains events" << endl;
 		cout << "       objects - file contains objects" << endl;
 		cout << "       gen     - randomly generate n events" << endl;
-		cout << "n    - number of events to randomly generate (optional)" << endl;
+		cout << "file - file for events for objects option" << endl;
+		cout << "n    - number of events to randomly generate for gen option (optional)" << endl;
 		exit(0);
 	}
 
+	const string addr = "localhost";
+	const int port = 6379;
 	const string key = argv[1];
-	const string file = argv[2];
-	const string type = argv[3];
-	const int n_generated = (argc >= 5) ? atoi(argv[4] : 100);
-
+	const string type = argv[2];
+	const string file = argv[3];
+	const int n_generate = atoi(argv[3]);
+								
 	cout << "Open connection to " << addr << ":" << port << endl;
 	redisContext *c = redisConnect(addr.c_str(), port);
 	if (c == NULL || c->err){
@@ -237,17 +260,18 @@ int main(int argc, char **argv){
 	if (!type.compare("events")){
 		cout << "Submit events from " << file << endl;
 		int n_events = LoadEvents(c, key, file);
-		cout << n_events << " successfully submitted" << endl;
+		cout << endl << n_events << " successfully submitted" << endl;
 	} else if (!type.compare("objects")){
 		cout << "Submit objects from " << file << endl;
 		int n_objects = LoadObjects(c, key, file);
-		cout << n_objects << " successfully submitted" << endl;
+		cout << endl << n_objects << " successfully submitted" << endl;
 	} else if (!type.compare("gen")){
-		cout << "Submit "  <<  n_generated << " randomly generated events" << endl;
-		int n_random = GenerateEvents(c, key);
-		cout << n_random << " successfully submitted" << endl;
+		int n_generate = atoi(argv[3]);
+		cout << "Submit "  <<  n_generate << " randomly generated events" << endl;
+		int n_random = GenerateEvents(c, key, n_generate);
+		cout << endl << n_random << " successfully submitted" << endl;
 	} else {
-		cout << "Unrecognized option: " << type << endl;
+		cout << endl << "Unrecognized option: " << type << endl;
 	}
 	
 	cout << "Done." << endl;
