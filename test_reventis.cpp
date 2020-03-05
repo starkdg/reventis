@@ -311,7 +311,7 @@ int TrackAll(redisContext *c, const string &key,
 												  enddate.c_str(), endtime.c_str());
 	int count = 0;
 	ProcessReply(c, reply, count);
-	cout << "  (" << count << " results)" << endl << endl;
+	cout << "  (" << count << " objects)" << endl << endl;
 	freeReplyObject(reply);
 	return count;
 }
@@ -324,7 +324,7 @@ int PurgeAllBefore(redisContext *c, const string &key, const string &date, const
 	int count;
 	if (reply && reply->type == REDIS_REPLY_INTEGER){
 		count = reply->integer;
-		cout << "  (" << reply->integer << " results)" << endl << endl;
+		cout << "  (" << reply->integer << " deleted)" << endl << endl;
 	} else {
 		count = 0;
 		cout << "ERR - unable to purge" << endl << endl;
@@ -349,7 +349,7 @@ int DeleteBlock(redisContext *c, const string &key,
 	int count;
 	if (reply && reply->type == REDIS_REPLY_INTEGER){
 		count = reply->integer;
-		cout << "  (" << reply->integer << " results)" << endl << endl;
+		cout << "  (" << reply->integer << " deleted)" << endl << endl;
 	} else {
 		count = 0;
 		cout << "ERR - unable to delete block" << endl << endl;
@@ -366,12 +366,11 @@ int DeleteObject(redisContext *c, const string &key, const long long object_id){
 	int count = 0;
 	if (reply && reply->type == REDIS_REPLY_INTEGER){
 		count = reply->integer;
-		cout << "  (" << reply->integer << " results)" << endl << endl;
+		cout << "  (" << reply->integer << " deleted)" << endl << endl;
 	} else {
 		count = 0;
-		cout << "ERR - unable to delete object " << object_id << endl;
+		cout << "ERR - unable to delete object " << object_id << endl << endl;
 	}
-	cout << endl << endl;
 	freeReplyObject(reply);
 	return count;
 }
@@ -526,7 +525,6 @@ void test_queries(redisContext *c, const string &key){
 
 	n = Query(c, key, x1, x2, y1, y2, datestr, starttime, enddatestr, endtime, 2, 5, 4);
 	assert(n == 2);
-
 }
 
 void test_queries2(redisContext *c, const string &key){
@@ -590,13 +588,11 @@ void test_partial_object_history(redisContext *c, const string &key){
 	endtime = "08:00";
 	n = ObjectHistoryForTimePeriod(c, key, 80, datestr, starttime, enddatestr, endtime);
 	assert(n == 1);
-
 }
 
 void test_delete_objects(redisContext *c, const string &key){
 	int n = DeleteObject(c, key, 150);
 	assert(n == 12);
-
 	n = DeleteObject(c, key, 70);
 	assert(n == 3);
 }
@@ -642,29 +638,29 @@ int main(int argc, char **argv){
 	int rc = FlushAllEvents(c, key);
 	assert(rc == 0);
 	
-	cout << "Load Events, Objects" << endl;
+	cout << "Load Events, Objects:" << endl;
 	test_add_events(c, key);
 
-	cout << "Add Categories to events" << endl;
+	cout << "Add Categories to events:" << endl;
 	test_add_categories(c, key);
 
-	cout << "Test Queries" << endl;
+	cout << "Test Query:" << endl;
 	test_queries(c, key);
 
 	test_queries2(c, key);
 
-	cout << "TrackALL" << endl;
+	cout << "TrackALL:" << endl;
 	test_trackall(c, key);
 
-	cout << "Object Histories" << endl;
+	cout << "Object Histories:" << endl;
 	test_object_history(c, key);
 
 	test_partial_object_history(c, key);
 
-	cout << "Delete objects" << endl;
+	cout << "Delete objects:" << endl;
 	test_delete_objects(c, key);
 
-	cout << "Purge" << endl;
+	cout << "Purge:" << endl;
 	test_purge(c, key);
 	
 	int n = GetSize(c, key);

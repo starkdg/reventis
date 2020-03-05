@@ -22,13 +22,9 @@ ExternalProject_Add(hiredis
   BUILD_COMMAND make static
   INSTALL_COMMAND echo install)
 
-add_executable(loadevents loaddata.cpp)
+add_executable(loadevents loadevents.cpp)
 target_link_libraries(loadevents ${HIREDIS_DIR}/libhiredis.a)
 set_target_properties(loadevents PROPERTIES INCLUDE_DIRECTORIES ${HIREDIS_INCLUDE_DIRS})
-
-add_executable(gendata generatedata.cpp)
-target_link_libraries(gendata ${HIREDIS_DIR}/libhiredis.a)
-set_target_properties(gendata PROPERTIES INCLUDE_DIRECTORIES ${HIREDIS_INCLUDE_DIRS})
 
 add_executable(testreventis test_reventis.cpp)
 target_link_libraries(testreventis ${HIREDIS_DIR}/libhiredis.a)
