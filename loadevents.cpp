@@ -228,13 +228,11 @@ int LoadObjects(redisContext *c, const string &key, const string &file){
 int main(int argc, char **argv){
 	if (argc < 4){
 		cout << "not enough args" << endl;
-		cout << "./load key [events|objects|gen] [file|n]" << endl;
-		cout << "key  - key string for redis database" << endl;
-		cout << "opt  - events - file contains events" << endl;
-		cout << "       objects - file contains objects" << endl;
-		cout << "       gen     - randomly generate n events" << endl;
-		cout << "file - file for events for objects option" << endl;
-		cout << "n    - number of events to randomly generate for gen option (optional)" << endl;
+		cout << endl << "./load key [events|objects|gen] [file|n]" << endl << endl;
+		cout << "key  - key for redis db" << endl;
+		cout << "option  - events, objects or gen" << endl;
+		cout << "file|n - file for events, objects option" << endl;
+		cout << "         n integer for number to randomly generate" << endl;
 		exit(0);
 	}
 
