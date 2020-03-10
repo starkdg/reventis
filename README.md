@@ -1,4 +1,4 @@
-# Reventis
+![banner](reventis.png)
 
 A Redis module for indexing events by location and time for fast efficient
 range queries.  Spatial coordinates are given in longitude and latitude with
