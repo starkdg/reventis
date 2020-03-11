@@ -707,18 +707,20 @@ extern "C" void RBTreeTypeFree(void *value){
 	RedisModuleDictIter *iter = RedisModule_DictIteratorStartC(tree->dict, "^", NULL, 0);
 	unsigned char *dict_key = NULL;
 	size_t keylen;
-	RBNode *node;
+	RBNode *node = NULL;
 	while ((dict_key = (unsigned char*)RedisModule_DictNextC(iter, &keylen, (void**)&node)) != NULL){
 		if (node->val.obj_id > 0) RemoveObjectFromList(tree, node->val.obj_id, node);
 		RedisModule_FreeString(NULL, node->val.descr);
 		RedisModule_Free(node);
+		RedisModule_DictDelC(tree->dict, dict_key, keylen, NULL);
 	}
 	RedisModule_DictIteratorStop(iter);
 
 	iter = RedisModule_DictIteratorStartC(tree->obj_dict, "^", NULL, 0);
-	multimap<time_t, RBNode*> *mmap = NULL;
-	while ((dict_key = (unsigned char*)RedisModule_DictNextC(iter, &keylen, (void**)&mmap)) != NULL){
-		delete mmap;
+	multimap<time_t, RBNode*> *mm = NULL;
+	while ((dict_key = (unsigned char*)RedisModule_DictNextC(iter, &keylen, (void**)&mm)) != NULL){
+		delete mm;
+		RedisModule_DictDelC(tree->obj_dict, dict_key, keylen, NULL);
 	}
 	RedisModule_DictIteratorStop(iter);
 	
