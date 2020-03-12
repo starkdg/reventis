@@ -402,7 +402,6 @@ int RBTreeDelete(RedisModuleCtx *ctx, RBTree *tree, Seqn s, long long eventid){
 	if (!IsRed(tree->root->left) && !IsRed(tree->root->right))
 		tree->root->red = true;
 
-	printf("delete %ld\n", eventid);
 	tree->root = delete_key(ctx, tree, tree->root, s, eventid);
 	
 	if (tree->root != NULL)	tree->root->red = false;
@@ -709,10 +708,8 @@ extern "C" void RBTreeTypeFree(void *value){
 	size_t keylen;
 	RBNode *node = NULL;
 	while ((dict_key = (unsigned char*)RedisModule_DictNextC(iter, &keylen, (void**)&node)) != NULL){
-		if (node->val.obj_id > 0) RemoveObjectFromList(tree, node->val.obj_id, node);
 		RedisModule_FreeString(NULL, node->val.descr);
-		RedisModule_Free(node);
-		RedisModule_DictDelC(tree->dict, dict_key, keylen, NULL);
+		delete node;
 	}
 	RedisModule_DictIteratorStop(iter);
 
@@ -720,7 +717,6 @@ extern "C" void RBTreeTypeFree(void *value){
 	multimap<time_t, RBNode*> *mm = NULL;
 	while ((dict_key = (unsigned char*)RedisModule_DictNextC(iter, &keylen, (void**)&mm)) != NULL){
 		delete mm;
-		RedisModule_DictDelC(tree->obj_dict, dict_key, keylen, NULL);
 	}
 	RedisModule_DictIteratorStop(iter);
 	
