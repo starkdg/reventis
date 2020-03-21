@@ -30,6 +30,10 @@ add_executable(queryevents queryevents.cpp)
 target_link_libraries(queryevents ${HIREDIS_DIR}/libhiredis.a)
 set_target_properties(queryevents PROPERTIES INCLUDE_DIRECTORIES ${HIREDIS_INCLUDE_DIRS})
 
+add_executable(loadgdelt loadgdelt.cpp)
+target_link_libraries(loadgdelt ${HIREDIS_DIR}/libhiredis.a)
+set_target_properties(loadgdelt PROPERTIES INCLUDE_DIRECTORIES ${HIREDIS_INCLUDE_DIRS})
+
 add_executable(testreventis test_reventis.cpp)
 target_link_libraries(testreventis ${HIREDIS_DIR}/libhiredis.a)
 set_target_properties(testreventis PROPERTIES INCLUDE_DIRECTORIES ${HIREDIS_INCLUDE_DIRS})

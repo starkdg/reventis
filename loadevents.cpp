@@ -251,6 +251,7 @@ int main(int argc, char **argv){
 		} else {
 			cout << "Unable to allocate redis context" << endl;
 		}
+		exit(0);
 	}
 
 	cout << "Submit using key = " << key << endl << endl;
@@ -258,16 +259,16 @@ int main(int argc, char **argv){
 	if (!type.compare("events")){
 		cout << "Submit events from " << file << endl;
 		int n_events = LoadEvents(c, key, file);
-		cout << endl << n_events << " successfully submitted" << endl;
+		cout << endl << n_events << " events successfully submitted" << endl;
 	} else if (!type.compare("objects")){
 		cout << "Submit objects from " << file << endl;
 		int n_objects = LoadObjects(c, key, file);
-		cout << endl << n_objects << " successfully submitted" << endl;
+		cout << endl << n_objects << " objects successfully submitted" << endl;
 	} else if (!type.compare("gen")){
 		int n_generate = atoi(argv[3]);
 		cout << "Submit "  <<  n_generate << " randomly generated events" << endl;
 		int n_random = GenerateEvents(c, key, n_generate);
-		cout << endl << n_random << " successfully submitted" << endl;
+		cout << endl << n_random << " events successfully submitted" << endl;
 	} else {
 		cout << endl << "Unrecognized option: " << type << endl;
 	}
