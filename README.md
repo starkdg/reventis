@@ -156,3 +156,79 @@ The `testreventis` program will test the basic functions of the module. It will 
 ctest, but make sure you have a redis-server running before you invoke it.  
 
 
+## GDELT Application
+
+The Global Database of Events, Locations and Tones - GDELT - is a database of world-wide events. The
+project - [gdelt](https://www.gdeltproject.org/) - curates information on events  from a variety of
+sources across the web, including an estimate of its geospatial coordinates and a timestamp.  The project
+has logged millions of events from 1979 to the present.  Each event is logged with several factors of
+information.
+
+The `loadgdelt` program can parse a raw .csv data files containing gdelt v2 events and submit them to
+a redis server. It submits the events to the redis-server with a category based on its top-level CAMEO
+event code. Invoke it like so:
+
+```
+./loadgdelt <key> <csv_event_file>
+```
+
+The `gdelt.sh` script will automatically download the files and run loadgdelt for each file.  Just adjust
+the `content_regexp` variable to include the desired timespan.  One year submits rougly  20 million events and
+consumes about 10GB of RAM memory.  Also, adjust key variable to reflect the value for the desired key to use
+in the redis-server.  
+
+Then you can do interesting queries on the data.  For example,
+
+```
+reventis.query <key> -72.723574 -72.641509 41.722626 41.809872 06-01-2016 00:00 07-01-2016 00:00
+```
+
+will get all events recorded in the Hartford, Ct area for the month of June in 2016.
+
+
+```
+reventis.query <key> -72.723574 -72.641509 41.722626 41.809872 06-01-2016 00:00 07-01-2016 00:00 14
+```
+
+will get all events in Hartford, CT area for month of June in 2016 recorded as "protest" events.
+
+
+The assigned event codes in the data set are  not entirely accurate, and some events are added
+multiple times for multiple event codes.  Also, the geospatial location data is only a rough estimate and
+is probably accurate to only city or state resolution.  Nonetheless, you can get an idea for the stories
+generated for a particular city/state at a particular moment in time.  To avoid an impossibly long list
+of results, you can query using the event codes.  You can also reduce the query region to a smaller area
+or time span. 
+
+### CAMEO Event Codes
+
+Here's a list of the top level cameo event codes used as categories. 
+
+01 - make public statement
+02 - appeal
+03 - expression of interest to cooperate
+04 - Consult
+05 - diplomatic cooperation
+06 - material cooperation
+07 - provide aide
+08 - yield
+09 - investigate
+10 - demand
+11 - disapprove
+12 - reject
+13 - threat
+14 - protest
+15 - show force
+16 - reduce relations
+17 - coercion
+18 - assault
+19 - fight
+20 - unconventional mass violence (e.g. guerrilla warfare)
+
+
+
+
+
+
+
+

@@ -141,8 +141,8 @@ int LoadGdelEvents(redisContext *c, const string &key, const string &file){
 			strftime(timestr, 32, "%H:%M:%S", gmtime(&e.timestamp));
 
 			string descr = "id = " + to_string(e.id) + " event = " + e.eventcode
-				+ " " + e.actors + " " + e.action + " gscale = " +  to_string(e.gscale) +
-				" avg tone = " + to_string(e.avg_tone) + " " + e.source_url;
+				+ " action = " + e.action + " gscale = " +  to_string(e.gscale) +
+				" tone = " + to_string(e.avg_tone) + " " + e.source_url;
 			
 			snprintf(cmd, 512, cmd_fmt, key.c_str(), e.longitude, e.latitude,
 					 datestr, timestr, datestr, timestr, descr.c_str(), e.eventrootcode);

@@ -3,8 +3,16 @@
 
 gdelt_url="http://data.gdeltproject.org/gdeltv2/masterfilelist.txt"
 
+# key value to use to submit to redis-server
 key="gdelt"
-content_regexp="gdeltv2/2015.*.export.CSV.zip"
+
+# Adjust this variable to download different time spans.
+# Vary resolutions to year, month or day by including YYYY, YYYYMM or YYYYMMDD
+
+#content_regexp="gdeltv2/YYYY[0-9].*.export.CSV.zip"
+#content_regexp="gdelv2/YYYYYMM[0-9].*.export.CSV.zip"
+#content_regexp="gdeltv2/YYYYMMDD[0-9].*.export.CSV.zip"
+content_regexp="gdeltv2/2016[0-9].*.export.CSV.zip"
 
 content=$(curl -v --silent ${gdelt_url} --stderr - | grep $content_regexp)
 
