@@ -19,6 +19,7 @@ typedef struct entry_t {
 	// event attribute fields
 	int isroot;
 	string eventcode;
+	int eventrootcode;
 	int quadclass;
 	double gscale;
 	int n_mentions;
@@ -68,7 +69,10 @@ int parse_gdeltv2_event(string &line, Entry &e){
 	getline(ss, word, '\t');
 	e.eventcode = word;
 
-	skip_tabs(ss, 2);
+	skip_tabs(ss, 1);
+
+	getline(ss, word, '\t');
+	e.eventrootcode = atoi(word.c_str());
 
 	getline(ss, word, '\t');
 	e.quadclass = atoi(word.c_str());
@@ -124,9 +128,9 @@ int LoadGdelEvents(redisContext *c, const string &key, const string &file){
 	ifstream input(file);
 
 	redisReply *reply;
-	const char *cmd_fmt = "reventis.insert %s %f %f %s %s %s %s %s";
+	const char *cmd_fmt = "reventis.insertwithcat %s %f %f %s %s %s %s %s %d";
 
-	char cmd[128];
+	char cmd[512];
 	char datestr[32];
 	char timestr[32];
 	long long count = 0;
@@ -138,14 +142,14 @@ int LoadGdelEvents(redisContext *c, const string &key, const string &file){
 
 			string descr = "id = " + to_string(e.id) + " event = " + e.eventcode
 				+ " " + e.actors + " " + e.action + " gscale = " +  to_string(e.gscale) +
-				"avg tone = " + to_string(e.avg_tone) + " " + e.source_url;
+				" avg tone = " + to_string(e.avg_tone) + " " + e.source_url;
 			
-			snprintf(cmd, 128, cmd_fmt, key.c_str(), e.longitude, e.latitude,
-					 datestr, timestr, datestr, timestr, descr.c_str());
+			snprintf(cmd, 512, cmd_fmt, key.c_str(), e.longitude, e.latitude,
+					 datestr, timestr, datestr, timestr, descr.c_str(), e.eventrootcode);
 			
 			cout << "send => " << cmd << endl;
 			reply = (redisReply*)redisCommand(c, cmd_fmt, key.c_str(), e.longitude, e.latitude,
-											  datestr, timestr, datestr, timestr, descr.c_str());
+											  datestr, timestr, datestr, timestr, descr.c_str(), e.eventrootcode);
 			if (reply && reply->type == REDIS_REPLY_INTEGER){
 				count++;
 				cout << "reply => event id = " << reply->integer << endl;

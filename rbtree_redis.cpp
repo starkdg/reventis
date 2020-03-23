@@ -814,38 +814,12 @@ int RBTreeQueryResults(RedisModuleCtx *ctx, RedisModuleString *key,
 	return REDISMODULE_OK;
 }
 
-/* args: key longitude latitude date-start time-start date-end time-end title-description [id]*/
-/* an optional event_id argument is included for replication commands */
-/* return event-id assigned to entry */
-extern "C" int RBTreeInsert_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc){
-	if (argc < 9 || argc > 10) return RedisModule_WrongArity(ctx);
+int RBTreeInsertCommon(RedisModuleCtx *ctx, RedisModuleString *keystr,
+					   RedisModuleString *longitudestr, RedisModuleString *latitudestr,
+					   RedisModuleString *startdatestr, RedisModuleString *starttimestr,
+					   RedisModuleString *enddatestr, RedisModuleString *endtimestr,
+					   RedisModuleString *titlestr, unsigned long long cat_id, long long event_id){
 
-	RedisModule_AutoMemory(ctx);
-	
-	RedisModuleString *keystr = argv[1];
-	RedisModuleString *longitudestr = argv[2];
-	RedisModuleString *latitudestr = argv[3];
-	RedisModuleString *startdatestr = argv[4];
-	RedisModuleString *starttimestr = argv[5];
-	RedisModuleString *enddatestr = argv[6];
-	RedisModuleString *endtimestr = argv[7];
-	RedisModuleString *titlestr = argv[8];
-	long long event_id;
-
-	if (argc < 10){
-		// assign id number for new entry 
-		RedisModuleCallReply *reply = RedisModule_Call(ctx, "INCRBY", "cl", "event:id", 1);
-		if (RedisModule_CallReplyType(reply) != REDISMODULE_REPLY_INTEGER){
-			RedisModule_ReplyWithError(ctx, "ERR - Unable to generate unique Id");
-			return REDISMODULE_ERR;
-		}
-		event_id = RedisModule_CallReplyInteger(reply);
-	} else {
-		if (RedisModule_StringToLongLong(argv[9], &event_id) != REDISMODULE_OK){
-			RedisModule_ReplyWithError(ctx, "ERR - Unable to parse Id arg");
-			return REDISMODULE_ERR;
-		}
-	}
 	double x, y;
 	if (ParseLongLat(longitudestr, latitudestr, x, y) < 0){
 		RedisModule_ReplyWithError(ctx, "ERR - bad longitude/latitude arg values");
@@ -880,10 +854,11 @@ extern "C" int RBTreeInsert_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **ar
 	pnt.arr[2] = static_cast<uint64_t>(t1);
 
 	RedisModule_RetainString(ctx, titlestr);
-	
+
 	Value val;
 	val.x = x;
 	val.y = y;
+	val.cat = cat_id;
 	val.id = event_id;
 	val.start = t1;
 	val.end = t2;
@@ -908,16 +883,107 @@ extern "C" int RBTreeInsert_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **ar
 	
 	RedisModule_ReplyWithLongLong(ctx, event_id);
 
+
+	return REDISMODULE_OK;
+}
+					   
+
+/* args: key longitude latitude date-start time-start date-end time-end title-description [id]*/
+/* an optional event_id argument is included for replication commands */
+/* return event-id assigned to entry */
+extern "C" int RBTreeInsert_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc){
+	if (argc < 9 || argc > 10) return RedisModule_WrongArity(ctx);
+
+	RedisModule_AutoMemory(ctx);
+
+	long long event_id = 0;
+	if (argc == 10) {
+		if (RedisModule_StringToLongLong(argv[9], &event_id) != REDISMODULE_OK){
+			RedisModule_ReplyWithError(ctx, "ERR - Unable to parse Id arg");
+			return REDISMODULE_ERR;
+		}
+	} else {
+		// assign id number for new entry
+		string key = RedisModule_StringPtrLen(argv[1], NULL);
+		key += ":id";
+		RedisModuleCallReply *reply = RedisModule_Call(ctx, "INCRBY", "cl", key.c_str(), 1);
+		if (RedisModule_CallReplyType(reply) != REDISMODULE_REPLY_INTEGER){
+			RedisModule_ReplyWithError(ctx, "ERR - Unable to generate unique Id");
+			return REDISMODULE_ERR;
+		}
+		event_id = RedisModule_CallReplyInteger(reply);
+	}
+	
+	int rc = RBTreeInsertCommon(ctx, argv[1], argv[2], argv[3], argv[4], argv[5],
+					   argv[6], argv[7], argv[8], 0, event_id);
+
+	if (rc == REDISMODULE_ERR){
+		return REDISMODULE_ERR;
+	}
+	
 	/* replicate command with eventid tacked on as last argument */
-	int r = RedisModule_Replicate(ctx, "reventis.insert", "ssssssssl",
-								  keystr, longitudestr, latitudestr,
-								  startdatestr, starttimestr, enddatestr, endtimestr,
-								  titlestr, event_id);
-	if (r == REDISMODULE_ERR){
+	rc = RedisModule_Replicate(ctx, "reventis.insert", "ssssssssl",
+							   argv[1], argv[2], argv[3], argv[4], argv[5], argv[6], argv[7],
+							   argv[8], event_id);
+	if (rc == REDISMODULE_ERR){
 		RedisModule_Log(ctx, "warning", "WARN - Unable to replicate for id %ld", event_id);
 		return REDISMODULE_ERR;
 	}
 	
+	return REDISMODULE_OK;
+}
+
+/* args: mytree long. lat. date-start time-start date-end time-end descr cat_id [id] */
+int RBTreeInsertWithCat_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc){
+	if (argc < 10 || argc > 11) return RedisModule_WrongArity(ctx);
+
+	RedisModule_AutoMemory(ctx);
+
+	long long event_id = 0;
+	if (argc == 11) {
+		if (RedisModule_StringToLongLong(argv[10], &event_id) != REDISMODULE_OK){
+			RedisModule_ReplyWithError(ctx, "ERR - Unable to parse Id arg");
+			return REDISMODULE_ERR;
+		}
+	} else {
+		// assign id number for new entry
+		string key = RedisModule_StringPtrLen(argv[1], NULL);
+		key += ":id";
+		RedisModuleCallReply *reply = RedisModule_Call(ctx, "INCRBY", "cl", key.c_str(), 1);
+		if (RedisModule_CallReplyType(reply) != REDISMODULE_REPLY_INTEGER){
+			RedisModule_ReplyWithError(ctx, "ERR - Unable to generate unique Id");
+			return REDISMODULE_ERR;
+		}
+		event_id = RedisModule_CallReplyInteger(reply);
+	}
+
+	long long category;
+	if (RedisModule_StringToLongLong(argv[9], &category) != REDISMODULE_OK){
+		RedisModule_ReplyWithError(ctx, "ERR - unable to parse cat id value");
+		return REDISMODULE_ERR;
+	}
+
+	if (category < 0 || category > 64){
+		RedisModule_ReplyWithError(ctx, "ERR - category value out of range");
+		return REDISMODULE_ERR;
+	}
+	
+	unsigned long long cat_id = 0x0001ULL << (category-1);
+	
+	int rc = RBTreeInsertCommon(ctx, argv[1], argv[2], argv[3], argv[4], argv[5],
+								argv[6], argv[7], argv[8], cat_id, event_id);
+	if (rc == REDISMODULE_ERR){
+		return REDISMODULE_ERR;
+	}
+
+	rc = RedisModule_Replicate(ctx, "reventis.insertwithcat", "sssssssssl",
+							   argv[1], argv[2], argv[3], argv[4], argv[5],
+							   argv[6], argv[7], argv[8], argv[9], event_id);
+	if (rc == REDISMODULE_ERR){
+		RedisModule_Log(ctx, "warning", "WARN - Unable to replicate for id %ld", event_id);
+		return REDISMODULE_ERR;
+	}
+
 	return REDISMODULE_OK;
 }
 
@@ -1349,8 +1415,10 @@ extern "C" int RBTreeUpdate_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **ar
 		return REDISMODULE_ERR;
 	}
 	
-	if (argc < 9){ // assign id number for new entry 
-		RedisModuleCallReply *reply = RedisModule_Call(ctx, "INCRBY", "cl", "event:id", 1);
+	if (argc < 9){ // assign id number for new entry
+		string keyidstr = RedisModule_StringPtrLen(keystr, NULL);
+		keyidstr += ":id";
+		RedisModuleCallReply *reply = RedisModule_Call(ctx, "INCRBY", "cl", keyidstr.c_str(), 1);
 		if (RedisModule_CallReplyType(reply) != REDISMODULE_REPLY_INTEGER){
 			RedisModule_ReplyWithError(ctx, "ERR - Unable to generate unique Id");
 			return REDISMODULE_ERR;
@@ -1445,25 +1513,31 @@ extern "C" int RBTreeQueryObjects_RedisCmd(RedisModuleCtx *ctx, RedisModuleStrin
 	char s1[32];
 
 	/* return results in embedded arrays */
-	RedisModule_ReplyWithArray(ctx, results.size());
+	long count = 0;
+	RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
 	for (Result res: results){
-		strftime(s1, 32, datetime_fmt, gmtime(&(res.val.start)));
+		if (res.val.obj_id > 0) {
 
-		RedisModule_ReplyWithArray(ctx, 6);
-		RedisModule_ReplyWithString(ctx, res.val.descr);
-		RedisModule_ReplyWithLongLong(ctx, res.val.id);
-		RedisModule_ReplyWithLongLong(ctx, res.val.obj_id);
-		RedisModule_ReplyWithDouble(ctx, res.val.x);
-		RedisModule_ReplyWithDouble(ctx, res.val.y);
-		RedisModule_ReplyWithStringBuffer(ctx, s1, strlen(s1)+1);
+			strftime(s1, 32, datetime_fmt, gmtime(&(res.val.start)));
+
+			RedisModule_ReplyWithArray(ctx, 6);
+			RedisModule_ReplyWithString(ctx, res.val.descr);
+			RedisModule_ReplyWithLongLong(ctx, res.val.id);
+			RedisModule_ReplyWithLongLong(ctx, res.val.obj_id);
+			RedisModule_ReplyWithDouble(ctx, res.val.x);
+			RedisModule_ReplyWithDouble(ctx, res.val.y);
+			RedisModule_ReplyWithStringBuffer(ctx, s1, strlen(s1)+1);
 		
-		RedisModuleString *resp = RedisModule_CreateStringPrintf(ctx, out_fmt,
+			RedisModuleString *resp = RedisModule_CreateStringPrintf(ctx, out_fmt,
 									   RedisModule_StringPtrLen(res.val.descr, NULL),
 									   res.val.id, res.val.obj_id,
 								       res.val.x, res.val.y, s1);
-		RedisModule_ReplyWithString(ctx, resp);
+			RedisModule_ReplyWithString(ctx, resp);
+			count++;
+		}
 	}
-
+	RedisModule_ReplySetArrayLength(ctx, count);
+	
 	chrono::time_point<chrono::high_resolution_clock> end = chrono::high_resolution_clock::now();
 	auto elapsed = chrono::duration_cast<chrono::microseconds>(end - start).count();
 	unsigned int dur = elapsed;
@@ -1681,6 +1755,10 @@ extern "C" int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv,
 								  "write deny-oom fast", 1, 1, 1) == REDISMODULE_ERR)
 		return REDISMODULE_ERR;
 
+	if (RedisModule_CreateCommand(ctx, "reventis.insertwithcat", RBTreeInsertWithCat_RedisCmd,
+								  "write deny-oom fast", 1, 1, 1) == REDISMODULE_ERR)
+		return REDISMODULE_ERR;
+	
 	if (RedisModule_CreateCommand(ctx, "reventis.addcategory", RBTreeAddCategory_RedisCmd,
 								  "write fast", 1, 1, 1) == REDISMODULE_ERR)
 		return REDISMODULE_ERR;
