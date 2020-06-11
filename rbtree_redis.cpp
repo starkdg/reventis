@@ -213,6 +213,24 @@ void RemoveObjectFromList(RBTree *tree, long long obj_id, RBNode *x){
 	return;
 }
 
+int get_next_id(RedisModuleCtx *ctx, RedisModuleString *keystr, long long &id){
+	id = RedisModule_Milliseconds() << 32;
+
+	id |= (int64_t)(rand() & 0xffff0000);
+
+	string key = RedisModule_StringPtrLen(keystr, NULL);
+	key += ":counter";
+
+	RedisModuleCallReply *reply = RedisModule_Call(ctx, "INCRBY", "cl", key.c_str(), 1);
+	if (RedisModule_CallReplyType(reply) != REDISMODULE_REPLY_INTEGER){
+		return REDISMODULE_ERR;
+	}
+
+	id |= (0x0000ffffULL & RedisModule_CallReplyInteger(reply));
+	RedisModule_FreeCallReply(reply);
+	return REDISMODULE_OK;
+}
+
 /*================== Get RBTree with key =================================  */
 
 /* Return the native data type. NULL if does not yet exist, throw -1 exception
@@ -904,23 +922,18 @@ extern "C" int RBTreeInsert_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **ar
 		}
 	} else {
 		// assign id number for new entry
-		string key = RedisModule_StringPtrLen(argv[1], NULL);
-		key += ":id";
-		RedisModuleCallReply *reply = RedisModule_Call(ctx, "INCRBY", "cl", key.c_str(), 1);
-		if (RedisModule_CallReplyType(reply) != REDISMODULE_REPLY_INTEGER){
-			RedisModule_ReplyWithError(ctx, "ERR - Unable to generate unique Id");
+		if (get_next_id(ctx, argv[1], event_id) == REDISMODULE_ERR){
+			RedisModule_ReplyWithError(ctx, "ERR - Unable to get next Id");
 			return REDISMODULE_ERR;
 		}
-		event_id = RedisModule_CallReplyInteger(reply);
 	}
 	
 	int rc = RBTreeInsertCommon(ctx, argv[1], argv[2], argv[3], argv[4], argv[5],
 					   argv[6], argv[7], argv[8], 0, event_id);
 
-	if (rc == REDISMODULE_ERR){
+	if (rc == REDISMODULE_ERR)
 		return REDISMODULE_ERR;
-	}
-	
+  	
 	/* replicate command with eventid tacked on as last argument */
 	rc = RedisModule_Replicate(ctx, "reventis.insert", "ssssssssl",
 							   argv[1], argv[2], argv[3], argv[4], argv[5], argv[6], argv[7],
@@ -947,14 +960,10 @@ int RBTreeInsertWithCat_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, 
 		}
 	} else {
 		// assign id number for new entry
-		string key = RedisModule_StringPtrLen(argv[1], NULL);
-		key += ":id";
-		RedisModuleCallReply *reply = RedisModule_Call(ctx, "INCRBY", "cl", key.c_str(), 1);
-		if (RedisModule_CallReplyType(reply) != REDISMODULE_REPLY_INTEGER){
-			RedisModule_ReplyWithError(ctx, "ERR - Unable to generate unique Id");
+		if (get_next_id(ctx, argv[1], event_id) == REDISMODULE_ERR){
+			RedisModule_ReplyWithError(ctx, "ERR - Unable to get next id");
 			return REDISMODULE_ERR;
 		}
-		event_id = RedisModule_CallReplyInteger(reply);
 	}
 
 	long long category;
@@ -1363,7 +1372,7 @@ int RBTreeSize_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc)
 	try {
 		tree = GetRBTree(ctx, argv[1]);
 		if (tree == NULL) {
-			RedisModule_ReplyWithError(ctx, "ERR - No such key");
+			RedisModule_ReplyWithError(ctx, "no such key");
 			return REDISMODULE_ERR;
 		}
 	} catch (int &e){
@@ -1416,14 +1425,10 @@ extern "C" int RBTreeUpdate_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **ar
 	}
 	
 	if (argc < 9){ // assign id number for new entry
-		string keyidstr = RedisModule_StringPtrLen(keystr, NULL);
-		keyidstr += ":id";
-		RedisModuleCallReply *reply = RedisModule_Call(ctx, "INCRBY", "cl", keyidstr.c_str(), 1);
-		if (RedisModule_CallReplyType(reply) != REDISMODULE_REPLY_INTEGER){
-			RedisModule_ReplyWithError(ctx, "ERR - Unable to generate unique Id");
+		if (get_next_id(ctx, argv[1], event_id) == REDISMODULE_ERR) {
+			RedisModule_ReplyWithError(ctx, "ERR - Unable to get next id");
 			return REDISMODULE_ERR;
 		}
-		event_id = RedisModule_CallReplyInteger(reply);
 	} else {
 		if (RedisModule_StringToLongLong(argv[8], &event_id) != REDISMODULE_OK){
 			RedisModule_ReplyWithError(ctx, "ERR - Unable to parse Id arg");

@@ -34,7 +34,7 @@ add_executable(loadgdelt loadgdelt.cpp)
 target_link_libraries(loadgdelt ${HIREDIS_DIR}/libhiredis.a)
 set_target_properties(loadgdelt PROPERTIES INCLUDE_DIRECTORIES ${HIREDIS_INCLUDE_DIRS})
 
-add_executable(testreventis test_reventis.cpp)
+add_executable(testreventis test_reventis.cpp reventisclient_util.cpp)
 target_link_libraries(testreventis ${HIREDIS_DIR}/libhiredis.a)
 set_target_properties(testreventis PROPERTIES INCLUDE_DIRECTORIES ${HIREDIS_INCLUDE_DIRS})
 
