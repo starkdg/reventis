@@ -25,6 +25,8 @@ static const char *date_fmt = "%d-%d-%d";         // MM-DD-YYY
 static const char *time_fmt = "%d:%d:%d";            // HH:MM
 static const char *datetime_fmt = "%m-%d-%Y %H:%M:%S"; // for use with strftime time parsing
 
+static const char *descr_field = "descr";
+
 /*======================= dyn mem management ===============================*/
 
 void* operator new(size_t sz){
@@ -47,14 +49,12 @@ typedef struct value_t {
 	long long obj_id;
 	unsigned long long cat;
 	time_t start, end;
-	RedisModuleString *descr;
 	value_t(){
 		x = y = 0;
 		id = 0;
 		obj_id = 0;
 		cat = 0;
 		start = end = 0;
-		descr = NULL;
 	}
 	value_t(const value_t &other){
 		x = other.x;
@@ -64,7 +64,6 @@ typedef struct value_t {
 		cat = other.cat;
 		start = other.start;
 		end = other.end;
-		descr = other.descr;
 	}
 	value_t& operator=(const value_t &other){
 		x = other.x;
@@ -74,7 +73,6 @@ typedef struct value_t {
 		cat = other.cat;
 		start = other.start;
 		end = other.end;
-		descr = other.descr;
 		return *this;
 	}
 } Value;
@@ -229,6 +227,88 @@ int get_next_id(RedisModuleCtx *ctx, RedisModuleString *keystr, long long &id){
 	id |= (0x0000ffffULL & RedisModule_CallReplyInteger(reply));
 	RedisModule_FreeCallReply(reply);
 	return REDISMODULE_OK;
+}
+
+/* retrieve a descr field stored in keystr+id hash redis datatype */
+RedisModuleString* GetDescriptionField(RedisModuleCtx *ctx, RedisModuleString *keystr, long long id){
+	string idstr = RedisModule_StringPtrLen(keystr, NULL);
+	idstr += ":" + to_string(id);
+
+	RedisModuleString *keyidstr = RedisModule_CreateString(ctx, idstr.c_str(), idstr.length());
+	RedisModuleKey *key = (RedisModuleKey*)RedisModule_OpenKey(ctx, keyidstr, REDISMODULE_READ);
+	if (RedisModule_KeyType(key) != REDISMODULE_KEYTYPE_HASH){
+		RedisModule_CloseKey(key);
+		return NULL;
+	}
+
+	RedisModuleString *descr = NULL;
+	RedisModule_HashGet(key, REDISMODULE_HASH_CFIELDS, descr_field, &descr, NULL);
+	RedisModule_CloseKey(key);
+	return descr;
+}
+
+/* set a descr field for a keystr+id redis hash data type */ 
+void SetDescriptionField(RedisModuleCtx *ctx, RedisModuleString *keystr, long long id, RedisModuleString *descr){
+	string idstr = RedisModule_StringPtrLen(keystr, NULL);
+	idstr += ":" + to_string(id);
+
+	RedisModuleString *keyidstr = RedisModule_CreateString(ctx, idstr.c_str(), idstr.length());
+	RedisModuleKey *key = (RedisModuleKey*)RedisModule_OpenKey(ctx, keyidstr, REDISMODULE_WRITE);
+	if (RedisModule_KeyType(key) != REDISMODULE_KEYTYPE_EMPTY){
+		RedisModule_CloseKey(key);
+		return;
+	}
+
+	RedisModule_HashSet(key, REDISMODULE_HASH_CFIELDS|REDISMODULE_HASH_NX, descr_field, descr, NULL);
+	RedisModule_CloseKey(key);
+}
+
+void DeleteDescriptionField(RedisModuleCtx *ctx, RedisModuleString *keystr, long long id){
+	string idstr = RedisModule_StringPtrLen(keystr, NULL);
+	idstr += ":" + to_string(id);
+
+	RedisModuleString *keyidstr = RedisModule_CreateString(ctx, idstr.c_str(), idstr.length());
+	RedisModuleKey *key = (RedisModuleKey*)RedisModule_OpenKey(ctx, keyidstr, REDISMODULE_WRITE);
+	if (RedisModule_KeyType(key) != REDISMODULE_KEYTYPE_HASH){
+		RedisModule_CloseKey(key);
+		return;
+	}
+
+	RedisModule_HashSet(key, REDISMODULE_HASH_CFIELDS, descr_field, REDISMODULE_HASH_DELETE, NULL);
+	RedisModule_CloseKey(key);
+}
+
+void DeleteDescriptionKey(RedisModuleCtx *ctx, RedisModuleString *keystr, long long id){
+	string idstr = RedisModule_StringPtrLen(keystr, NULL);
+	idstr += ":" + to_string(id);
+
+	RedisModuleString *keyidstr = RedisModule_CreateString(ctx, idstr.c_str(), idstr.length());
+	RedisModuleKey *key = (RedisModuleKey*)RedisModule_OpenKey(ctx, keyidstr, REDISMODULE_WRITE);
+	if (RedisModule_KeyType(key) != REDISMODULE_KEYTYPE_HASH){
+		RedisModule_CloseKey(key);
+		return;
+	}
+
+	RedisModule_DeleteKey(key);
+	RedisModule_CloseKey(key);
+}
+
+void DeleteCounterKey(RedisModuleCtx *ctx, RedisModuleString *keystr){
+	string counterstr = RedisModule_StringPtrLen(keystr, NULL);
+	counterstr += ":counter";
+
+	RedisModuleString *keycounterstr = RedisModule_CreateString(ctx, counterstr.c_str(), counterstr.length());
+	RedisModuleKey *key = (RedisModuleKey*)RedisModule_OpenKey(ctx, keycounterstr, REDISMODULE_WRITE);
+	RedisModule_DeleteKey(key);
+	RedisModule_CloseKey(key);
+	return;
+}
+
+void DeleteKey(RedisModuleCtx *ctx, RedisModuleString *keystr){
+	RedisModuleKey *key = (RedisModuleKey*)RedisModule_OpenKey(ctx, keystr, REDISMODULE_WRITE);
+	RedisModule_DeleteKey(key);
+	RedisModule_CloseKey(key);
+	return;
 }
 
 /*================== Get RBTree with key =================================  */
@@ -392,8 +472,6 @@ RBNode* delete_key(RedisModuleCtx *ctx, RBTree *tree, RBNode *node, Seqn s, long
 
 				if (node->val.obj_id > 0) RemoveObjectFromList(tree, node->val.obj_id, node);
 
-				RedisModule_FreeString(NULL, node->val.descr);
-
 				node->s = xnode->s;
 				node->val = xnode->val;
 				node->maxseqn = xnode->maxseqn;
@@ -469,11 +547,11 @@ int RBTreeInsert(RBTree *tree, Seqn s, Value val){
 }
 
 /* in-order travsal */
-void print_tree(RedisModuleCtx *ctx, RBNode *node, int level = 0){
+void print_tree(RedisModuleCtx *ctx, RedisModuleString *keystr, RBNode *node, int level = 0){
 	if (node == NULL) return;
 
 	// print left 
-	print_tree(ctx, node->left, level+1);
+	print_tree(ctx, keystr, node->left, level+1);
 
 	// print node 
 	double x = node->val.x;
@@ -482,12 +560,14 @@ void print_tree(RedisModuleCtx *ctx, RBNode *node, int level = 0){
 	char scratch[64];
 	strftime(scratch, 64, datetime_fmt, gmtime(&(node->val.start)));
 
-	RedisModule_Log(ctx, "info", "print (level %d) %s %.6f/%.6f id=%lld %s red=%d cat=%ld", level,
-					RedisModule_StringPtrLen(node->val.descr, NULL), x, y,
-					node->val.id, scratch, node->red, node->val.cat);
-
+	RedisModuleString *node_descr = GetDescriptionField(ctx, keystr, node->val.id);
+	
+	RedisModule_Log(ctx, "info", "print (level %d) %s %.6f/%.6f id=%lld %s red=%d cat=%ld",
+					level, node_descr, x, y, node->val.id, scratch, node->red, node->val.cat);
+	RedisModule_FreeString(ctx, node_descr);
+	
 	// print right 
-	print_tree(ctx, node->right, level+1);
+	print_tree(ctx, keystr, node->right, level+1);
 }
 
 long long RBTreePrint(RedisModuleCtx *ctx, RedisModuleString *keystr){
@@ -498,7 +578,7 @@ long long RBTreePrint(RedisModuleCtx *ctx, RedisModuleString *keystr){
 	}
 
 	RedisModule_Log(ctx, "info", "print tree: %s", RedisModule_StringPtrLen(keystr, NULL));
-	print_tree(ctx, tree->root);
+	print_tree(ctx, keystr, tree->root);
 	return tree->root->count;
 }
 
@@ -626,7 +706,6 @@ extern "C" void* RBTreeTypeRdbLoad(RedisModuleIO *rdb, int encver){
 		val.cat = RedisModule_LoadUnsigned(rdb);
 		val.start = static_cast<time_t>(RedisModule_LoadSigned(rdb));
 		val.end = static_cast<time_t>(RedisModule_LoadSigned(rdb));
-		val.descr = RedisModule_LoadString(rdb);
 
 		if (RBTreeInsert(tree, s, val) < 0){
 			RedisModule_LogIOError(rdb, "warning", "rdbload: unable to insert %ld", val.id);
@@ -666,9 +745,6 @@ extern "C" void RBTreeTypeRdbSave(RedisModuleIO *rdb, void *value){
 		// time start/end
 		RedisModule_SaveSigned(rdb, node->val.start);
 		RedisModule_SaveSigned(rdb, node->val.end);
-
-		// title string
-		RedisModule_SaveString(rdb, node->val.descr);
 	}
 	RedisModule_DictIteratorStop(iter);
 }
@@ -681,40 +757,41 @@ extern "C" void RBTreeTypeAofRewrite(RedisModuleIO *aof, RedisModuleString *key,
 
 	RedisModuleDictIter *iter = RedisModule_DictIteratorStartC(tree->dict, "^", NULL, 0);
 	
-	char s1[32];
-	char s2[32];
+	char s1[16];
+	char s2[16];
+	char t1[16];
+	char t2[16];
+	char px[16];
+	char py[16];
 	unsigned char *dict_key = NULL;
 	RBNode *node = NULL;
 	while ((dict_key = (unsigned char*)RedisModule_DictNextC(iter, NULL, (void**)&node)) != NULL){
-		strftime(s1, 32, "%m-%d-%Y %H:%M", gmtime(&(node->val.start)));
-		strftime(s2, 32, "%m-%d-%Y %H:%M", gmtime(&(node->val.end)));
+		strftime(s1, 16, "%m-%d-%Y", gmtime(&(node->val.start)));
+		strftime(s2, 16, "%m-%d-%Y", gmtime(&(node->val.end)));
+		strftime(t1, 16, "%H:%M", gmtime(&(node->val.start)));
+		strftime(t2, 16, "%H:%M", gmtime(&(node->val.end)));
+		snprintf(px, 16, "%f", node->val.x);
+		snprintf(py, 16, "%f", node->val.y);
 
-		RedisModuleString *argstr = NULL;
-		if (node->val.obj_id <= 0){
-			argstr = RedisModule_CreateStringPrintf(NULL, "%s %.6f %.6f %s %s %s",
-												RedisModule_StringPtrLen(key, NULL),
-												node->val.x, node->val.y, s1, s2,
-											    RedisModule_StringPtrLen(node->val.descr, NULL));
-			RedisModule_EmitAOF(aof, "reventis.insert", "sl", argstr, node->val.id);
+		
+		if (node->val.obj_id == 0){
+			RedisModule_EmitAOF(aof, "reventis.insertrepl", "sccccccl",
+								key, px, py, s1, t1, s2, t2, node->val.id);
 		} else {
-			argstr = RedisModule_CreateStringPrintf(NULL, "%s %.6f %.6f %s %lld %s",
-										   RedisModule_StringPtrLen(key, NULL),
-										   node->val.x, node->val.y, s1,
-										   node->val.obj_id,
-										   RedisModule_StringPtrLen(node->val.descr, NULL));
-			RedisModule_EmitAOF(aof, "reventis.update", "sl", argstr, node->val.id);
+			RedisModule_EmitAOF(aof, "reventis.updaterepl", "sccccll",
+								key, px, py, s1, t1, node->val.obj_id, node->val.id);
 		}
 
 		unsigned long long cat_id = 0x0001ULL;
 		long long pos = 1;
+	  
 		while (cat_id){
 			if (cat_id & node->val.cat){
-				RedisModule_EmitAOF(aof, "reventis.addcategory", "sll", key, node->val.id, pos);
+				RedisModule_EmitAOF(aof, "reventis.addcategory", "sl", key, pos);
 			}
 			cat_id <<= 1;
 			pos++;
 		}
-		RedisModule_FreeString(NULL, argstr);
 	}
 	RedisModule_DictIteratorStop(iter);
 }
@@ -722,18 +799,17 @@ extern "C" void RBTreeTypeAofRewrite(RedisModuleIO *aof, RedisModuleString *key,
 extern "C" void RBTreeTypeFree(void *value){
 	RBTree *tree = (RBTree*)value;
 	RedisModuleDictIter *iter = RedisModule_DictIteratorStartC(tree->dict, "^", NULL, 0);
-	unsigned char *dict_key = NULL;
+	long long *dict_key = NULL;
 	size_t keylen;
 	RBNode *node = NULL;
-	while ((dict_key = (unsigned char*)RedisModule_DictNextC(iter, &keylen, (void**)&node)) != NULL){
-		RedisModule_FreeString(NULL, node->val.descr);
+	while ((dict_key = (long long*)RedisModule_DictNextC(iter, &keylen, (void**)&node)) != NULL){
 		delete node;
 	}
 	RedisModule_DictIteratorStop(iter);
 
 	iter = RedisModule_DictIteratorStartC(tree->obj_dict, "^", NULL, 0);
 	multimap<time_t, RBNode*> *mm = NULL;
-	while ((dict_key = (unsigned char*)RedisModule_DictNextC(iter, &keylen, (void**)&mm)) != NULL){
+	while ((dict_key = (long long*)RedisModule_DictNextC(iter, &keylen, (void**)&mm)) != NULL){
 		delete mm;
 	}
 	RedisModule_DictIteratorStop(iter);
@@ -836,7 +912,7 @@ int RBTreeInsertCommon(RedisModuleCtx *ctx, RedisModuleString *keystr,
 					   RedisModuleString *longitudestr, RedisModuleString *latitudestr,
 					   RedisModuleString *startdatestr, RedisModuleString *starttimestr,
 					   RedisModuleString *enddatestr, RedisModuleString *endtimestr,
-					   RedisModuleString *titlestr, unsigned long long cat_id, long long event_id){
+					   unsigned long long cat_id, long long event_id){
 
 	double x, y;
 	if (ParseLongLat(longitudestr, latitudestr, x, y) < 0){
@@ -871,8 +947,6 @@ int RBTreeInsertCommon(RedisModuleCtx *ctx, RedisModuleString *keystr,
 	pnt.arr[1] = static_cast<uint64_t>((y+90.0)*LONG_LAT_SCALE_FACTOR);
 	pnt.arr[2] = static_cast<uint64_t>(t1);
 
-	RedisModule_RetainString(ctx, titlestr);
-
 	Value val;
 	val.x = x;
 	val.y = y;
@@ -880,7 +954,6 @@ int RBTreeInsertCommon(RedisModuleCtx *ctx, RedisModuleString *keystr,
 	val.id = event_id;
 	val.start = t1;
 	val.end = t2;
-	val.descr = titlestr;
 	
 	Seqn s;
 	spfc_encode(pnt, s);
@@ -898,101 +971,81 @@ int RBTreeInsertCommon(RedisModuleCtx *ctx, RedisModuleString *keystr,
 		RedisModule_ReplyWithError(ctx, "ERR - Insert failed");
 		return REDISMODULE_ERR;
 	}
-	
-	RedisModule_ReplyWithLongLong(ctx, event_id);
 
+	RedisModule_ReplyWithLongLong(ctx, event_id);
 
 	return REDISMODULE_OK;
 }
-					   
+
+/* args: key longitude latitude date-start time-start date-end time-end [id] */
+extern "C" int RBTreeInsertRepl_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc){
+	if (argc < 8 || argc > 9) return RedisModule_WrongArity(ctx);
+	RedisModule_AutoMemory(ctx);
+
+	long long event_id;
+	if (argc == 8){
+		if (get_next_id(ctx, argv[1], event_id) == REDISMODULE_ERR){
+			RedisModule_ReplyWithError(ctx, "ERR - unable to assign event id");
+			return REDISMODULE_ERR;
+		}
+	} else {
+		if (RedisModule_StringToLongLong(argv[9], &event_id) == REDISMODULE_ERR){
+			RedisModule_ReplyWithError(ctx, "ERR - unable to parse event id");
+			return REDISMODULE_ERR;
+		}
+	}
+
+	int rc = RBTreeInsertCommon(ctx, argv[1], argv[2], argv[3], argv[4], argv[5],
+								argv[6], argv[7], 0, event_id);
+	if (rc == REDISMODULE_ERR) return REDISMODULE_ERR;
+
+
+	rc = RedisModule_Replicate(ctx, "reventis.insertrepl", "sssssssl",
+							   argv[1], argv[2], argv[3], argv[4], argv[5],
+							   argv[6], argv[7], event_id);
+	if (rc == REDISMODULE_ERR){
+		RedisModule_Log(ctx, "warning", "Unable to replicate for id %lld", event_id);
+		return REDISMODULE_ERR;
+	}
+	
+	return REDISMODULE_OK;
+}
 
 /* args: key longitude latitude date-start time-start date-end time-end title-description [id]*/
 /* an optional event_id argument is included for replication commands */
 /* return event-id assigned to entry */
 extern "C" int RBTreeInsert_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc){
 	if (argc < 9 || argc > 10) return RedisModule_WrongArity(ctx);
-
 	RedisModule_AutoMemory(ctx);
 
-	long long event_id = 0;
-	if (argc == 10) {
-		if (RedisModule_StringToLongLong(argv[9], &event_id) != REDISMODULE_OK){
-			RedisModule_ReplyWithError(ctx, "ERR - Unable to parse Id arg");
+	long long event_id;
+	if (argc == 9){
+		if (get_next_id(ctx, argv[1], event_id) == REDISMODULE_ERR){
+			RedisModule_ReplyWithError(ctx, "ERR - unable to assign event id");
 			return REDISMODULE_ERR;
 		}
 	} else {
-		// assign id number for new entry
-		if (get_next_id(ctx, argv[1], event_id) == REDISMODULE_ERR){
-			RedisModule_ReplyWithError(ctx, "ERR - Unable to get next Id");
+		if (RedisModule_StringToLongLong(argv[9], &event_id) == REDISMODULE_ERR){
+			RedisModule_ReplyWithError(ctx, "ERR - unable to parse event id");
 			return REDISMODULE_ERR;
 		}
 	}
 	
 	int rc = RBTreeInsertCommon(ctx, argv[1], argv[2], argv[3], argv[4], argv[5],
-					   argv[6], argv[7], argv[8], 0, event_id);
+					   argv[6], argv[7], 0, event_id);
+	if (rc == REDISMODULE_ERR) return REDISMODULE_ERR;
 
-	if (rc == REDISMODULE_ERR)
-		return REDISMODULE_ERR;
-  	
+	SetDescriptionField(ctx, argv[1], event_id, argv[8]);
+
 	/* replicate command with eventid tacked on as last argument */
 	rc = RedisModule_Replicate(ctx, "reventis.insert", "ssssssssl",
-							   argv[1], argv[2], argv[3], argv[4], argv[5], argv[6], argv[7],
-							   argv[8], event_id);
-	if (rc == REDISMODULE_ERR){
-		RedisModule_Log(ctx, "warning", "WARN - Unable to replicate for id %ld", event_id);
-		return REDISMODULE_ERR;
-	}
-	
-	return REDISMODULE_OK;
-}
-
-/* args: mytree long. lat. date-start time-start date-end time-end descr cat_id [id] */
-int RBTreeInsertWithCat_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc){
-	if (argc < 10 || argc > 11) return RedisModule_WrongArity(ctx);
-
-	RedisModule_AutoMemory(ctx);
-
-	long long event_id = 0;
-	if (argc == 11) {
-		if (RedisModule_StringToLongLong(argv[10], &event_id) != REDISMODULE_OK){
-			RedisModule_ReplyWithError(ctx, "ERR - Unable to parse Id arg");
-			return REDISMODULE_ERR;
-		}
-	} else {
-		// assign id number for new entry
-		if (get_next_id(ctx, argv[1], event_id) == REDISMODULE_ERR){
-			RedisModule_ReplyWithError(ctx, "ERR - Unable to get next id");
-			return REDISMODULE_ERR;
-		}
-	}
-
-	long long category;
-	if (RedisModule_StringToLongLong(argv[9], &category) != REDISMODULE_OK){
-		RedisModule_ReplyWithError(ctx, "ERR - unable to parse cat id value");
-		return REDISMODULE_ERR;
-	}
-
-	if (category < 0 || category > 64){
-		RedisModule_ReplyWithError(ctx, "ERR - category value out of range");
-		return REDISMODULE_ERR;
-	}
-	
-	unsigned long long cat_id = 0x0001ULL << (category-1);
-	
-	int rc = RBTreeInsertCommon(ctx, argv[1], argv[2], argv[3], argv[4], argv[5],
-								argv[6], argv[7], argv[8], cat_id, event_id);
-	if (rc == REDISMODULE_ERR){
-		return REDISMODULE_ERR;
-	}
-
-	rc = RedisModule_Replicate(ctx, "reventis.insertwithcat", "sssssssssl",
 							   argv[1], argv[2], argv[3], argv[4], argv[5],
-							   argv[6], argv[7], argv[8], argv[9], event_id);
+							   argv[6], argv[7], argv[8], event_id);
 	if (rc == REDISMODULE_ERR){
-		RedisModule_Log(ctx, "warning", "WARN - Unable to replicate for id %ld", event_id);
+		RedisModule_Log(ctx, "warning", "Unable to replicate for id %ld", event_id);
 		return REDISMODULE_ERR;
 	}
-
+	
 	return REDISMODULE_OK;
 }
 
@@ -1042,19 +1095,19 @@ int ModifyCategories(RedisModuleCtx *ctx, RedisModuleString **argv, int argc, bo
 	}
 
 	RedisModule_Log(ctx, "debug", "modify category for node - %llx", idnode->val.cat);
-	
 	RedisModule_ReplyWithSimpleString(ctx, "OK");
 	RedisModule_ReplicateVerbatim(ctx);
+
 	return REDISMODULE_OK;
 }
 
-/* args: mytree event_id cat_id */
+/* args: mytree event_id cat_id [cat_id...}]*/
 extern "C" int RBTreeAddCategory_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc){
 	if (argc < 4) return RedisModule_WrongArity(ctx);
 	return ModifyCategories(ctx, argv, argc, true);
 }
 
-/* args: mytree event_id cat_id */
+/* args: mytree event_id cat_id [cat_id...]*/
 extern "C" int RBTreeRemoveCategory_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc){
 	if (argc < 4) return RedisModule_WrongArity(ctx);
 	return ModifyCategories(ctx, argv, argc, false);
@@ -1097,8 +1150,11 @@ extern "C" int RBTreeLookup_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **ar
 	strftime(s1, 64, datetime_fmt, gmtime(&(idnode->val.start)));
 	strftime(s2, 64, datetime_fmt, gmtime(&(idnode->val.end)));
 
+
+	RedisModuleString *descr = GetDescriptionField(ctx, keystr, event_id);
+	
 	RedisModule_ReplyWithArray(ctx, 7);
-	RedisModule_ReplyWithString(ctx, idnode->val.descr);
+	RedisModule_ReplyWithString(ctx, descr);
 	RedisModule_ReplyWithLongLong(ctx, idnode->val.id);
 	RedisModule_ReplyWithLongLong(ctx, idnode->val.obj_id);
 	RedisModule_ReplyWithDouble(ctx, idnode->val.x);
@@ -1148,6 +1204,8 @@ extern "C" int RBTreeDelete_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **ar
 		RedisModule_ReplyWithError(ctx, "ERR Unable to delete");
 		return REDISMODULE_ERR;
 	}
+
+	DeleteDescriptionField(ctx, keystr, event_id);
 	
 	RedisModule_ReplyWithSimpleString(ctx, "OK");
 	RedisModule_ReplicateVerbatim(ctx);
@@ -1209,6 +1267,7 @@ int RBTreePurge_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc
 	long long n_deletes = (long long)results.size();
 
 	for (Result res : results){
+		DeleteDescriptionField(ctx, keystr, res.val.id);
 		if (RBTreeDelete(ctx, tree, res.s, res.val.id) < 0){
 			RedisModule_ReplyWithError(ctx, "ERR - Unable to delete");
 			return REDISMODULE_OK;
@@ -1269,6 +1328,7 @@ int RBTreeDelBlk_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int arg
 	}
 
 	for (Result res: results){
+		DeleteDescriptionField(ctx, argv[1], res.val.id);
 		if (cat_flag == 0 || (res.val.cat & cat_flag)){
 			if (RBTreeDelete(ctx, tree, res.s, res.val.id) < 0){
 				RedisModule_ReplyWithError(ctx, "ERR - unable to delete");
@@ -1328,18 +1388,20 @@ int RBTreeQuery_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc
 	for (Result res : results){
 		if (cat_flag == 0 || (res.val.cat & cat_flag)){
 			if (res.val.obj_id == 0){
-					strftime(s1, 64, datetime_fmt, gmtime(&(res.val.start)));
-					strftime(s2, 64, datetime_fmt, gmtime(&(res.val.end)));
+				RedisModuleString *descr = GetDescriptionField(ctx, argv[1], res.val.id);
+				
+				strftime(s1, 64, datetime_fmt, gmtime(&(res.val.start)));
+				strftime(s2, 64, datetime_fmt, gmtime(&(res.val.end)));
 
-					RedisModule_ReplyWithArray(ctx, 6);
-					RedisModule_ReplyWithString(ctx, res.val.descr);
-					RedisModule_ReplyWithLongLong(ctx, res.val.id);
-					RedisModule_ReplyWithDouble(ctx, res.val.x);
-					RedisModule_ReplyWithDouble(ctx, res.val.y);
-					RedisModule_ReplyWithStringBuffer(ctx, s1, strlen(s1)+1);
-					RedisModule_ReplyWithStringBuffer(ctx, s2, strlen(s2)+1);
-					count++;
-				}
+				RedisModule_ReplyWithArray(ctx, 6);
+				RedisModule_ReplyWithString(ctx, descr);
+				RedisModule_ReplyWithLongLong(ctx, res.val.id);
+				RedisModule_ReplyWithDouble(ctx, res.val.x);
+				RedisModule_ReplyWithDouble(ctx, res.val.y);
+				RedisModule_ReplyWithStringBuffer(ctx, s1, strlen(s1)+1);
+				RedisModule_ReplyWithStringBuffer(ctx, s2, strlen(s2)+1);
+				count++;
+			}
 		}
 	}
 	RedisModule_ReplySetArrayLength(ctx, count);
@@ -1405,6 +1467,92 @@ extern "C" int RBTreeDepth_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **arg
 	return REDISMODULE_OK;
 }
 
+
+/* args: key longitude latitude date time object_id [id] */
+extern "C" int RBTreeUpdateRepl_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc){
+	if (argc < 7 || argc > 8) return RedisModule_WrongArity(ctx);
+	RedisModule_AutoMemory(ctx);
+
+	long long object_id;
+	if (RedisModule_StringToLongLong(argv[6], &object_id) != REDISMODULE_OK || object_id <= 0){
+		RedisModule_ReplyWithError(ctx, "ERR - Unable to parse object id");
+		return REDISMODULE_ERR;
+	}
+
+	long long event_id;
+	if (argc == 7){ // assign id number for new entry
+		if (get_next_id(ctx, argv[1], event_id) == REDISMODULE_ERR) {
+			RedisModule_ReplyWithError(ctx, "ERR - Unable to get next id");
+			return REDISMODULE_ERR;
+		}
+	} else {
+		if (RedisModule_StringToLongLong(argv[7], &event_id) != REDISMODULE_OK){
+			RedisModule_ReplyWithError(ctx, "ERR - Unable to parse Id arg");
+			return REDISMODULE_ERR;
+		}
+	}
+
+	double x, y;
+	if (ParseLongLat(argv[2], argv[3], x, y) < 0){
+		RedisModule_ReplyWithError(ctx, "ERR - bad longitude/latitude arg values");
+		return REDISMODULE_ERR;
+	}
+
+	if (x < -180.0 || x > 180.0 || y < -90.0 || y > 90.0){
+		RedisModule_ReplyWithError(ctx, "ERR - longitude/latitude args out of range");
+		return REDISMODULE_ERR;
+	}
+	
+	time_t t1;
+	if (ParseDateTime(argv[4], argv[5], t1) < 0){
+		RedisModule_ReplyWithError(ctx, "ERR - Unable to parse start time");
+		return REDISMODULE_ERR;
+	}
+
+
+	Point pnt;
+	pnt.arr[0] = static_cast<uint64_t>((x+180.0)*LONG_LAT_SCALE_FACTOR);
+	pnt.arr[1] = static_cast<uint64_t>((y+90.0)*LONG_LAT_SCALE_FACTOR);
+	pnt.arr[2] = static_cast<uint64_t>(t1);
+
+	Value val;
+	val.x = x;
+	val.y = y;
+	val.id = event_id;
+	val.obj_id = object_id;
+	val.start = t1;
+	val.end = t1;
+	
+	Seqn s;
+	spfc_encode(pnt, s);
+
+	RBTree *tree = NULL;
+	try {
+		tree = GetRBTree(ctx, argv[1]);
+		if (tree == NULL) tree = CreateRBTree(ctx, argv[1]);
+	} catch (int &e){
+		RedisModule_ReplyWithError(ctx, "ERR - key exists for different type. Delete first.");
+		return REDISMODULE_ERR;
+	}
+	
+	if (RBTreeInsert(tree, s, val) < 0){
+		RedisModule_ReplyWithError(ctx, "ERR - Insert failed");
+		return REDISMODULE_ERR;
+	}
+
+	RedisModule_ReplyWithLongLong(ctx, event_id);
+
+	if (RedisModule_Replicate(ctx, "reventis.updaterepl", "ssssssl",
+							  argv[1], argv[2], argv[3], argv[4],
+							  argv[5], argv[6], event_id) == REDISMODULE_ERR){
+		RedisModule_Log(ctx, "warning", "Unable to replicate for id %ld", event_id);
+		return REDISMODULE_ERR;
+	}
+	
+	return REDISMODULE_OK;
+}
+
+
 /* args: key longitude latitude date time object_id descr [id] */
 extern "C" int RBTreeUpdate_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc){
 	if (argc < 8 || argc > 9) return RedisModule_WrongArity(ctx);
@@ -1458,8 +1606,6 @@ extern "C" int RBTreeUpdate_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **ar
 	pnt.arr[1] = static_cast<uint64_t>((y+90.0)*LONG_LAT_SCALE_FACTOR);
 	pnt.arr[2] = static_cast<uint64_t>(t1);
 
-	RedisModule_RetainString(ctx, descr);
-	
 	Value val;
 	val.x = x;
 	val.y = y;
@@ -1467,7 +1613,6 @@ extern "C" int RBTreeUpdate_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **ar
 	val.obj_id = object_id;
 	val.start = t1;
 	val.end = t1;
-	val.descr = descr;
 	
 	Seqn s;
 	spfc_encode(pnt, s);
@@ -1486,6 +1631,8 @@ extern "C" int RBTreeUpdate_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **ar
 		return REDISMODULE_ERR;
 	}
 
+	SetDescriptionField(ctx, keystr, event_id, descr);
+	
 	/* returned assigned event_id to node  */
 	RedisModule_ReplyWithLongLong(ctx, event_id);
 
@@ -1522,11 +1669,12 @@ extern "C" int RBTreeQueryObjects_RedisCmd(RedisModuleCtx *ctx, RedisModuleStrin
 	RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
 	for (Result res: results){
 		if (res.val.obj_id > 0) {
+			RedisModuleString *descr = GetDescriptionField(ctx, argv[1], res.val.id);
 
 			strftime(s1, 32, datetime_fmt, gmtime(&(res.val.start)));
 
 			RedisModule_ReplyWithArray(ctx, 6);
-			RedisModule_ReplyWithString(ctx, res.val.descr);
+			RedisModule_ReplyWithString(ctx, descr);
 			RedisModule_ReplyWithLongLong(ctx, res.val.id);
 			RedisModule_ReplyWithLongLong(ctx, res.val.obj_id);
 			RedisModule_ReplyWithDouble(ctx, res.val.x);
@@ -1534,7 +1682,7 @@ extern "C" int RBTreeQueryObjects_RedisCmd(RedisModuleCtx *ctx, RedisModuleStrin
 			RedisModule_ReplyWithStringBuffer(ctx, s1, strlen(s1)+1);
 		
 			RedisModuleString *resp = RedisModule_CreateStringPrintf(ctx, out_fmt,
-									   RedisModule_StringPtrLen(res.val.descr, NULL),
+									   RedisModule_StringPtrLen(descr, NULL),
 									   res.val.id, res.val.obj_id,
 								       res.val.x, res.val.y, s1);
 			RedisModule_ReplyWithString(ctx, resp);
@@ -1647,10 +1795,11 @@ extern "C" int RBTreeHist_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv
 		RBNode *n = iter->second;
 		if (n->val.start > t2) break;
 
+		RedisModuleString *descr = GetDescriptionField(ctx, argv[1], n->val.id);
 		strftime(s1, 32, datetime_fmt, gmtime(&(n->val.start)));
 
 		RedisModule_ReplyWithArray(ctx, 6);
-		RedisModule_ReplyWithString(ctx, n->val.descr);
+		RedisModule_ReplyWithString(ctx, descr);
 		RedisModule_ReplyWithLongLong(ctx, n->val.id);
 		RedisModule_ReplyWithLongLong(ctx, n->val.obj_id);
 		RedisModule_ReplyWithDouble(ctx, n->val.x);
@@ -1714,8 +1863,12 @@ extern "C" int RBTreeDelObj_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **ar
 	long long count = 0;
 	for (Result res : results){
 		printf("delete %ld\n", res.val.id);
+		RedisModuleString *descr = GetDescriptionField(ctx, argv[1], res.val.id);
+		
 		RedisModule_Log(ctx, "debug", "del %lld %s",
-						res.val.id, RedisModule_StringPtrLen(res.val.descr, NULL));
+						res.val.id, RedisModule_StringPtrLen(descr, NULL));
+
+		DeleteDescriptionField(ctx, argv[1], res.val.id);
 		if (RBTreeDelete(ctx, tree, res.s, res.val.id) < 0){
 			printf("ERR - unable to delete %ld\n", res.val.id);
 			RedisModule_ReplyWithError(ctx, "ERR - unable to delete");
@@ -1737,6 +1890,40 @@ extern "C" int RBTreeDelObj_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **ar
 	return REDISMODULE_OK;
 }
 
+/* args: key */
+extern "C" int RBTreeDeleteKey_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc){
+	if (argc != 2) return RedisModule_WrongArity(ctx);
+
+	RBTree *tree = NULL;
+	try {
+		tree = GetRBTree(ctx, argv[1]);
+		if (tree == NULL) {
+			RedisModule_ReplyWithError(ctx, "ERR - no such key");
+			return REDISMODULE_ERR;
+		}
+	} catch (int &e){
+		RedisModule_ReplyWithError(ctx, "ERR - key exists for different type. Delete first.");
+		return REDISMODULE_ERR;
+	}
+
+	// delete id fields containing description fields
+	RedisModuleDictIter *iter = RedisModule_DictIteratorStartC(tree->dict, "^", NULL, 0);
+	long long *id_key = NULL;
+	size_t keylen;
+	RBNode *node = NULL;
+	while ((id_key = (long long*)RedisModule_DictNextC(iter, &keylen, (void**)&node)) != NULL){
+		DeleteDescriptionKey(ctx, argv[1], *id_key);
+	}
+	RedisModule_DictIteratorStop(iter);
+
+	DeleteCounterKey(ctx, argv[1]);
+	DeleteKey(ctx, argv[1]);
+	
+	RedisModule_ReplyWithSimpleString(ctx, "OK");
+	
+	return REDISMODULE_OK;
+}
+
 /*  ============Onload init function ======================= */
 extern "C" int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc){
 	if (RedisModule_Init(ctx, "reventis", 1, REDISMODULE_APIVER_1) == REDISMODULE_ERR){
@@ -1753,17 +1940,20 @@ extern "C" int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv,
 								 .free = RBTreeTypeFree};
 	
 	RBTreeType = RedisModule_CreateDataType(ctx, "RBTree-DS", RBTREE_ENCODING_VERSION, &tm);
-	if (RBTreeType == NULL)
+	if (RBTreeType == NULL)	return REDISMODULE_ERR;
+
+	if (RedisModule_CreateCommand(ctx, "reventis.delkey", RBTreeDeleteKey_RedisCmd,
+								  "write", 1, -1, 1) == REDISMODULE_ERR)
+		return REDISMODULE_ERR;
+	
+	if (RedisModule_CreateCommand(ctx, "reventis.insertrepl", RBTreeInsertRepl_RedisCmd,
+								  "write deny-oom fast", 1, -1, 1) == REDISMODULE_ERR)
 		return REDISMODULE_ERR;
 	
 	if (RedisModule_CreateCommand(ctx, "reventis.insert",  RBTreeInsert_RedisCmd,
-								  "write deny-oom fast", 1, 1, 1) == REDISMODULE_ERR)
+								  "write deny-oom fast", 1, -1, 1) == REDISMODULE_ERR)
 		return REDISMODULE_ERR;
 
-	if (RedisModule_CreateCommand(ctx, "reventis.insertwithcat", RBTreeInsertWithCat_RedisCmd,
-								  "write deny-oom fast", 1, 1, 1) == REDISMODULE_ERR)
-		return REDISMODULE_ERR;
-	
 	if (RedisModule_CreateCommand(ctx, "reventis.addcategory", RBTreeAddCategory_RedisCmd,
 								  "write fast", 1, 1, 1) == REDISMODULE_ERR)
 		return REDISMODULE_ERR;
@@ -1804,25 +1994,29 @@ extern "C" int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv,
 		return REDISMODULE_ERR;
 
 	/* ------------- object-tracking commands --------------------------*/
+
+	if (RedisModule_CreateCommand(ctx, "reventis.updaterepl", RBTreeUpdate_RedisCmd,
+								  "write deny-oom fast", 1, -1, 1) == REDISMODULE_ERR)
+		return REDISMODULE_ERR;
 	
 	if (RedisModule_CreateCommand(ctx, "reventis.update", RBTreeUpdate_RedisCmd,
-								  "write deny-oom fast", 1, 1, 1) == REDISMODULE_ERR)
+								  "write deny-oom fast", 1, -1, 1) == REDISMODULE_ERR)
 		return REDISMODULE_ERR;
 
 	if (RedisModule_CreateCommand(ctx, "reventis.queryobj", RBTreeQueryObjects_RedisCmd,
-								  "readonly", 1, 1, 1) == REDISMODULE_ERR)
+								  "readonly", 1, -1, 1) == REDISMODULE_ERR)
 		return REDISMODULE_ERR;
 	
 	if (RedisModule_CreateCommand(ctx, "reventis.trackall", RBTreeTrackAll_RedisCmd,
-								  "readonly", 1, 1, 1) == REDISMODULE_ERR)
+								  "readonly", 1, -1, 1) == REDISMODULE_ERR)
 		return REDISMODULE_ERR;
 
 	if (RedisModule_CreateCommand(ctx, "reventis.hist", RBTreeHist_RedisCmd,
-								  "readonly fast", 1, 1, 1) == REDISMODULE_ERR)
+								  "readonly fast", 1, -1, 1) == REDISMODULE_ERR)
 		return REDISMODULE_ERR;
 
 	if (RedisModule_CreateCommand(ctx, "reventis.delobj", RBTreeDelObj_RedisCmd,
-								  "write deny-oom", 1, 1, 1) == REDISMODULE_ERR)
+								  "write deny-oom", 1, -1, 1) == REDISMODULE_ERR)
 		return REDISMODULE_ERR;
 	
 	return REDISMODULE_OK;
