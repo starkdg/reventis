@@ -14,6 +14,7 @@
 #include <cassert>
 #include <limits>
 #include "spfc.hpp"
+#include "rbtree.hpp"
 #include "redismodule.h"
 
 using namespace std;
@@ -21,11 +22,20 @@ using namespace std;
 #define LONG_LAT_SCALE_FACTOR 1000000
 #define RBTREE_ENCODING_VERSION 1
 
-static const char *date_fmt = "%d-%d-%d";         // MM-DD-YYY
-static const char *time_fmt = "%d:%d:%d";            // HH:MM
+static const char *date_fmt = "%d-%d-%d";              // MM-DD-YYY
+static const char *time_fmt = "%d:%d:%d";              // HH:MM
 static const char *datetime_fmt = "%m-%d-%Y %H:%M:%S"; // for use with strftime time parsing
 
 static const char *descr_field = "descr";
+
+static RedisModuleType *RBTreeType; 
+
+typedef struct rbtree_t {
+	RBNode *root;
+	RedisModuleDict *dict;
+	RedisModuleDict *obj_dict;
+	uint64_t object_count;
+} RBTree;
 
 /*======================= dyn mem management ===============================*/
 
@@ -38,90 +48,7 @@ void operator delete(void *p){
 	RedisModule_Free(p);
 }
 
-/*======================= type definitions ==================================*/
-
-static RedisModuleType *RBTreeType; 
-
-/* value struct for nodes */
-typedef struct value_t {
-	double x, y;
-	long long id;
-	long long obj_id;
-	unsigned long long cat;
-	time_t start, end;
-	value_t(){
-		x = y = 0;
-		id = 0;
-		obj_id = 0;
-		cat = 0;
-		start = end = 0;
-	}
-	value_t(const value_t &other){
-		x = other.x;
-		y = other.y;
-		id = other.id;
-		obj_id = other.obj_id;
-		cat = other.cat;
-		start = other.start;
-		end = other.end;
-	}
-	value_t& operator=(const value_t &other){
-		x = other.x;
-		y = other.y;
-		id = other.id;
-		obj_id = other.obj_id;
-		cat = other.cat;
-		start = other.start;
-		end = other.end;
-		return *this;
-	}
-} Value;
-
-typedef struct query_region_t {
-	double x_lower, x_upper;
-	double y_lower, y_upper;
-	time_t t_lower, t_upper;
-} QueryRegion;
-
-typedef struct rbnode_t {
-	Seqn s;
-	Seqn maxseqn;
-	Value val;
-	long long count;
-	bool red;
-    rbnode_t *left, *right;
-} RBNode;
-
-typedef struct rbtree_t {
-	RBNode *root;
-	RedisModuleDict *dict;
-	RedisModuleDict *obj_dict;
-	uint64_t object_count;
-} RBTree;
-
-/* aux. structure to keep track of state of a node w.r.t. which child nodes 
-have been visited in a query */
-typedef struct node_state_t {
-	RBNode *node;
-	int visited; // 0 - no children visited, 1 - left visited, 2 - both visited
-} NodeSt;
-
-typedef struct result_t {
-	Seqn s;
-	Value val;
-} Result;
-
-/*================ Aux. functions ======================================= */
-
-int GetNodeCount(RBNode *h){
-	if (h == NULL) return 0;
-	return h->count;
-}
-
-bool IsRed(RBNode *h){
-	if (h == NULL) return false;
-	return h->red;
-}
+/*================ Aux. RedisModule functions ======================================= */
 
 /* check to see if point defined in Value is contained in query region*/
 bool contains(const QueryRegion qr, const Value val){
@@ -357,68 +284,7 @@ RBTree* CreateRBTree(RedisModuleCtx *ctx, RedisModuleString *keystr){
 	return tree;
 }
 
-/* ===============  tree manipulation functions ==================*/
-
-RBNode* RotateLeft(RBNode *h){
-	RBNode *x = h->right;
-	h->right = x->left;
-	x->left = h;
-	x->red = h->red;
-	h->red = true;
-	x->count = h->count;
-	h->count = 1 + GetNodeCount(h->left) + GetNodeCount(h->right);
-	h->maxseqn = (h->right != NULL) ? h->right->maxseqn : h->s;
-	return x;
-}
-
-RBNode* RotateRight(RBNode *h){
-	RBNode *x = h->left;
-	h->left = x->right;
-	x->right = h;
-	x->red = h->red;
-	h->red = true;
-	x->count = h->count;
-	h->count = 1 + GetNodeCount(h->left) + GetNodeCount(h->right);
-	x->maxseqn = h->maxseqn;
-	return x;
-}
-
-void FlipColors(RBNode *h){
-	h->red = !(h->red);
-	h->left->red = !(h->left->red);
-	h->right->red = !(h->right->red);
-}
-
-RBNode* balance(RBNode *h){
-	if (IsRed(h->right)) h = RotateLeft(h);
-	if (IsRed(h->left) && IsRed(h->left->left)) h = RotateRight(h);
-	if (IsRed(h->left) && IsRed(h->right)) FlipColors(h);
-	h->count = 1 + GetNodeCount(h->left) + GetNodeCount(h->right);
-	return h;
-}
-
-RBNode* MoveRedLeft(RBNode *h){
-	FlipColors(h);
-	if (IsRed(h->right->left)){
-		h->right = RotateRight(h->right);
-		h = RotateLeft(h);
-	}
-	return h;
-}
-
-RBNode* MoveRedRight(RBNode *h){
-	FlipColors(h);
-	if (IsRed(h->left->left)){
-		h = RotateRight(h);
-	}
-	return h;
-}
-
-RBNode* minimum(RBNode *node){
-	while (node->left != NULL)
-		node = node->left;
-	return node;
-}
+/* ===============  module tree manipulation functions ==================*/
 
 RBNode* delete_min(RedisModuleCtx *ctx, RBTree *tree, RBNode *node){
 	if (node->left == NULL) {
@@ -582,52 +448,6 @@ long long RBTreePrint(RedisModuleCtx *ctx, RedisModuleString *keystr){
 	return tree->root->count;
 }
 
-/* recursive query implementation 
-int rbtree_query(RBNode *node, const QueryRegion qr, const Region r,
-				 Seqn &next, vector<Result> &results, int level=0){
-	if (node == NULL) return 0;
-
-	if (cmpseqnums(next, node->s) <= 0)
-		rbtree_query(node->left, qr, r, next, results, level+1);
-
-	if (contains(qr, node->val)){
-		Result res;
-		res.s = node->s;
-		res.x = node->val.x;
-		res.y = node->val.y;
-		res.start = node->val.start;
-		res.end = node->val.end;
-		res.id = node->val.id;
-		res.descr = node->val.descr;
-		results.push_back(res);
-	}
-
-	next = node->s;
-	Seqn prev = next;
-	if (!contains(qr, node->val) && !next_match(r, prev, next))
-		return 0;
-	
-	if (cmpseqnums(next, node->maxseqn) <= 0)
-		rbtree_query(node->right, qr, r, next, results, level+1);
-
-	return 0;
-}
-
-
-int RBTreeQuery(RBTree *tree, const QueryRegion qr, vector<Result> &results){
-	if (tree->root == NULL)	return -1;
-
-	Region r;
-	cast_query_region(qr, r);
-
-	Seqn prev, next;
-	if (next_match(r, prev, next))
-		rbtree_query(tree->root, qr, r, next, results);
-
-	return 0;
-}
-*/
-
 /* non-recursive implementation */
 int RBTreeQuery(RBTree *tree, const QueryRegion qr, vector<Result> &results){
 	Region r;
@@ -665,15 +485,6 @@ int RBTreeQuery(RBTree *tree, const QueryRegion qr, vector<Result> &results){
 	}
 	
 	return 0;
-}
-
-long long RBTreeDepth(const RBNode *node){
-	long long depth = 0;
-	while (node != NULL){
-		if (!IsRed(node->left))	depth++;
-		node = node->left;
-	}
-	return depth;
 }
 
 /* ------------------ RBTree type methods -----------------------------*/
