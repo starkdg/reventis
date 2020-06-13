@@ -912,13 +912,13 @@ int ModifyCategories(RedisModuleCtx *ctx, RedisModuleString **argv, int argc, bo
 	return REDISMODULE_OK;
 }
 
-/* args: mytree event_id cat_id [cat_id...}]*/
+/* args: mytree event_id [cat_id...}]*/
 extern "C" int RBTreeAddCategory_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc){
 	if (argc < 4) return RedisModule_WrongArity(ctx);
 	return ModifyCategories(ctx, argv, argc, true);
 }
 
-/* args: mytree event_id cat_id [cat_id...]*/
+/* args: mytree event_id [cat_id...]*/
 extern "C" int RBTreeRemoveCategory_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc){
 	if (argc < 4) return RedisModule_WrongArity(ctx);
 	return ModifyCategories(ctx, argv, argc, false);
@@ -1161,7 +1161,7 @@ int RBTreeDelBlk_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int arg
 }
 
 
-/* args: mytree longitude-range latitude-range start-range end-range cat_id */
+/* args: mytree longitude-range latitude-range start-range end-range [cat_id ...] */
 int RBTreeQuery_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc){
 	if (argc < 10) return RedisModule_WrongArity(ctx);
 	RedisModule_AutoMemory(ctx);

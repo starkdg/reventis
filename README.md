@@ -62,42 +62,98 @@ the module once data is inserted into the database.
 
 ## Module Commands
 
-The following commands are available to interact with the index.  All mostly self-explanatory.
-Insert new events with `reventis.insert`  which will reply with a unique event id assigned
-for that event.  Using that event id, events can be quickly referenced with the `reventis.lookup`
-command or deleted with `reventis.del` command.  `reventis.purge` allows you to delete all events
-before the given timestamp.  Or delete a block of events with a given range with `reventis.delblk`.  
+The module implements the following commands to insert, delete, query and otherwise
+interact with the index.  All mostly self-explanatory and discussed below.
 
 ```
-reventis.insert key longitude latitude date-start time-start date-end time-end title-string
-reventis.query key  <longitude range> <latitude range> <time-range>
-reventis.lookup key event-id
-reventis.delete key event-id
+reventis.insert key longitude latitude date-start time-start date-end time-end descr [id]
+```
+
+Insert an event as defined by longitude, latititude and time duration.  Dates and times
+are denoted in the form MM-DD-YYYY HH:MM[:SS].  `descr` is a description string for the
+event and is inserted into the keyspace, key:id under the hashfield marked "descr".
+An optional id integer can be provide. If not provided, one is assigned and returned by the
+command.  User can store additional information for the event in the `key:<id>` keyspace by
+making a new hashfield.  Complexity is O(log(N)), where N is is the number of indexed events.  
+
+```
+reventis.del key id
+```
+
+Delete id from the index of the specified keyspace.  Return simple string acknowledgement.
+Complexity is O(log(N)), where N is the number of indexed events.
+
+```
 reventis.purge key date time
-reventis.delblk key <longitude-range> <latitude-range> <time-range>
-reventis.print key
-reventis.clear key
+```
+
+Delete all events on or before denoted datetime.  Return the number of deleted events.
+Complexity is roughly on the order of O(Klog(N)), where K is the number of deleted events
+and N is the total number of events indexed.  Performance varies widely with the number of
+events it finds to delete.
+
+```
+reventis.delblk key x1 x2 y1 y2 datetime-start datetime-end [category...]
+```
+
+Delete a block of events indexed in a given range.  Range of longitude is x1 to x2.
+Range of latitude is y1 to y2.  Datetime ranges are in the form MM-DD-YYYY HH:MM[:SS].
+Apply a category filter by specifiying category integer values.  Returns the number of
+deleted events.  Complexity varies widely but is roughly on the order of O(Klog(N)),
+where K is the number of events found to delete, and N is the total number of indexed events. 
+
+```
+reventis.delkey key
+```
+
+Delete a key of the module's datatype.  Use encourage instead of `del key`, since it deletes
+also deletes all the key:id keyspaces containing the `descr` fields.  However, use `del` to
+preserve the `descr` strings.  Complexity is on the order of O(N), where N is the number of
+total events indexed.
+
+```
+reventis.lookup key id
+```
+
+Lookup event by id value. Returns an array composed of [descr, id, object_id, longitude,
+latitude, datetime_start, datetime_end].  Complexity is on the order of O(1).
+
+```
+reventis.query key x1 x2 y1 y2 t1 t2 [cat ...]
+```
+
+Query the index for all the elements in a given range.  The longitude range is given by x1 to
+x2. The latitude range is given by y1 to y2.  The timespan is given by t1 to t2, where both
+are provided in the form MM-DD-YYYY HH:MM[:SS].  The command returns the results in the form
+of an array of arrays.  Each inner array being [descr, id, longitude, latitude, t1, t2].
+Complexity varies widely, but is roughly on the order of O(Klog(N)), where K is the number of
+retrieved results, and N is the number of indexed events.
+
+
+```
+reventis.addcategory key event_id [cat ...]
+reventis.remcategory key event_id [cat ...]
+```
+
+Associate/dissociate any number of category integers to specified event ids.
+Categories can be from 1 to 64.  Complexity is O(1).
+
+```
 reventis.size key
 reventis.depth key
 ```
 
-### Categories
-
-For each event indexed, you can add/remove categories.  Just map your
-categories to integer values - from 1 up to 64. (Introduced with v0.2)
-Append any number of categories on the end. 
+Get the number of indexed events with the size command.  It returns an integer value.
+Or get the depth of the tree datastructure with the depth command. It also returns an
+integer value.  Both are O(1) complexity.
 
 ```
-reventis.addcategory key event-id category-id ... 
-reventis.remcategory key event-id category-id ... 
+reventis.print key
 ```
 
-To filter results by category, append category id's on to the end of the query command,
-like so:
+Useful debugging command that prints the tree data structure to redis log file.  Only
+use for small trees.
 
-```
-reventis.query key <longitude range> <latitude range> <time-range> <category-id> ...
-```
 
 ## Object Tracking Commands
 
@@ -109,30 +165,57 @@ returns a list of object ids falling within the query range.
 
 You can then retrieve histories for a given object.  Supply optional date and time limits to
 restrict the query to certain time limits.  An entire history of objects can be deleted with
-`reventis.delobj`.  For each object, a map is maintained of all the events for that object. This
-allows for quick and ready access.  
+`reventis.delobj`.  Quick and ready access to all objects is ennabled by a directly mapped
+data structure.  
 
 ```
-reventis.update key longitude latitude date time  object_id descr
-reventis.queryobj key longitude-range latitude-range time-range
-reventis.trackall key longitude-range latitude-range time-range
-reventis.hist key object_id start-date start-time end-date end-time
+reventis.update key longitude latitude date time  object_id descr [id]
+```
+
+Update an object with another event.  Date and time are provided in the form MM-DD-YYYY
+and HH:MM[:SS].  The `descr` string is a descriptive string.  A unique event id will
+be assigned by the module.  This is the normal expected use, but an id can be provided.
+Comlexity is on the order of O(log(N)), where N is the number of indexed events. 
+
+
+```
+reventis.queryobj key x1 x2 y1 y2 t1 t2
+```
+
+Query objects in a specified range.  This commands returns all events indexed as objects.
+Complexity varies widely, but is roughly on the order O(Klog(N)), where K is the number
+of retrieved objects and N is the number of indexed events.
+
+```
+reventis.trackall key x1 x2 y1 y2 t1 t2
+```
+
+Returns a list of object integer ids that fall in a given range.  Complexity varies widely,
+but roughly on the order of O(klog(N));
+
+```
+reventis.hist key object_id [t1 t2]
+```
+
+Return all events for a given object - optionally over a given time period. Time period is
+given by t1 to t2 in the form of MM-DD-YYYY HH:MM[:SS].  Results are returned in an array
+of arrays.  Each inner array composed of
+[descr, event_id, object_id, longitude, latitude, datetime].
+Complexity is on the order of O(K), where K is the number of events for the object.
+
+```
 reventis.delobj key object_id
 ```
 
-Examples for how the commands are used can be seen in the test_reventis.cpp file.  The examples are for
-c++ but you should be able to do the same in any of the other languages available for redis clients.
+Delete an object with all its events.  Return the number of events deleted.
+Complexity is O(K), where K is the number of events deleted.
 
-### Parameters
 
-The first argument is always the name of the index - e.g. "myevents".  All inserted events belong to
-a particular index structure. Multiple structures are possible.
+## Client API
 
-Longitude values must be in the range -180.0 ot 180.0, while acceptable latitudes are -90.0 to 90.0.
-Time values are in 24 hour time in the form HH:MM[:SS]. The seconds position is optional. 
-Date values are in the form MM:DD:YYYY
+Client code is provided with reventisclient_util.cpp to interact with the module.  It is used
+by the testreventis example program.  
 
-The longitude/latitude and time range arguments must include lower and upper bounds.
 
 ## Utilities
 
@@ -154,6 +237,15 @@ by an integer option, n for the number of events to randomly generate.
 
 The `testreventis` program will test the basic functions of the module. It will run with
 ctest, but make sure you have a redis-server running before you invoke it.  
+
+
+## Performance
+
+A graph of query times for various number of indexed events. This is for four different standard
+queries, each of different size.  Queries 1,2 and 3 stay well within 1ms or below.  Query 4 response
+times explode, but it's literally the size of Texas. 
+
+[Query Permance](reventis.png)
 
 
 ## GDELT Application
