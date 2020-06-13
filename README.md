@@ -245,7 +245,7 @@ A graph of query times for various number of indexed events. This is for four di
 queries, each of different size.  Queries 1,2 and 3 stay well within 1ms or below.  Query 4 response
 times explode, but it's literally the size of Texas. 
 
-[Query Permance](reventis.png)
+[Query Permance](results.png)
 
 
 ## GDELT Application
