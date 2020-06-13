@@ -1,63 +1,44 @@
 ![banner](reventis.png)
 
-A Redis module for indexing events by location and time for fast efficient
-range queries.  Spatial coordinates are given in longitude and latitude with
-up to 6 digits of precision. Time is specified by strings - e.g. HH:MM[:SS]
-The seconds precision is optional.
+A Redis module for the indexing of point geospatial data in time and space.
+Reventis introduces a native data type into the Redis ecosystem with commands
+for the fast insertion, deletion and lookup of event points, as well as a
+range query to retrieve all points within a rectangular region over a given
+time period.  Reventis clients can delete all points in a given region or to
+purge all points before a certain time. 
 
-## Features
+Events can be associated with categories - denoted as integers - for the
+purpose of finding  only certain categories of events in range queries.
 
-* Store all events in a single Redis native data structure. Use multiple
-  data structures with different keys.  
+Reventis provides commands for object-tracking.  By associating an
+object id number with added events, clients can group events in common.
+Reventis clients can query for all objects in a given spatial area and
+time period, or for all of an object's events.
 
-* Efficient range query.  Get all results within a specified range.
 
-* Add/remove categories to individual events.  Include only results
-  in a range query that fall in certain specified categories.  Filter
-  results by categories of events.
+## How It Works
 
-* Purge all that events that fall before a specific time stamp.
+Reventis uses the concept of a space-filling curve to assign events designated
+by geospatial coordinates and a fixed time point a single sequence number.
+Space-filling curves have the valuable property of helping to keep those points
+that are proximal to one another in a multi-dimensional space, also close in
+the linear sequence.  No curve ensures a perfect clustering of points, but the sequence
+number enables the events to be stored in a linear balanced search tree - in this
+case, a standard red-black tree - with all the benefits of fast efficient logarithmic
+access complexity.   
 
-* Delete a block of events in a certain range.
+Events can be traversed in order of the sequence number on the search tree.  Given a
+rectangular search region and the current sequence number - starting with 0 - we can
+always find the next sequence number that is also the next lowest in the region.
+In this way, we can guide the search.  We know there is no more possible matches when
+the current sequence number is not just out of the query region, but when we know there
+are no greater sequence numbers to snake back into the region.
 
-* Simple Object tracking feature. Group events by a common object id.
-  Track objects by fast efficient access to object histories.  
-
-* Easy to setup and use.  Use any number of language bindings to submit
-  commands to the redis server.  Reventis uses a single index to manage
-  data.  
-
-## Installation Instructions
-
-To build and install the module:   
-
-```
-make .
-make all
-make install
-```
-
-Run `make test` when you have a redis server up and running.  
-
-Installs to /var/local/lib directory.
-
-To load the module into redis, just type in the redis-cli:
-
-```
-module load /var/local/lib/reventis.so
-module unload reventis
-module list
-
-```
-
-Or, put this in your redis.conf configuration file:
-
-```
-loadmodule /var/local/lib/reventis.so
-```
-
-The latter option is preferable, since it is impossible to simply unload
-the module once data is inserted into the database. 
+Complexity is difficult to determine, because it is highly dependent on the number of
+event points indexed in a query region.  If there are few or no points to be found, the
+function returns rather quickly, since the next sequence it finds on the tree traversal
+is quickly identified as out of the region.  Performance is there dependent on the number
+of indexed events within the query region. 
 
 
 ## Module Commands
@@ -316,6 +297,38 @@ Here's a list of the top level cameo event codes used as categories.
 18 - assault
 19 - fight
 20 - unconventional mass violence (e.g. guerrilla warfare)
+
+## Installation Instructions
+
+To build and install the module:   
+
+```
+make .
+make all
+make install
+```
+
+Run `make test` when you have a redis server up and running.  
+
+Installs to /var/local/lib directory.
+
+To load the module into redis, just type in the redis-cli:
+
+```
+module load /var/local/lib/reventis.so
+module unload reventis
+module list
+
+```
+
+Or, put this in your redis.conf configuration file:
+
+```
+loadmodule /var/local/lib/reventis.so
+```
+
+The latter option is preferable, since it is impossible to simply unload
+the module once data is inserted into the database. 
 
 
 
