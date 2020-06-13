@@ -4,7 +4,7 @@ A Redis module for the indexing of point geospatial data in time and space.
 Reventis introduces a native data type into the Redis ecosystem with commands
 for the fast insertion, deletion and lookup of event points, as well as a
 range query to retrieve all points within a rectangular region over a given
-time period.  Reventis clients can delete all points in a given region or to
+time period.  Reventis clients can delete all points in a given region or 
 purge all points before a certain time. 
 
 Events can be associated with categories - denoted as integers - for the
@@ -31,19 +31,19 @@ Events can be traversed in order of the sequence number on the search tree.  Giv
 rectangular search region and the current sequence number - starting with 0 - we can
 always find the next sequence number that is also the next lowest in the region.
 In this way, we can guide the search.  We know there is no more possible matches when
-the current sequence number is not just out of the query region, but when we know there
-are no greater sequence numbers to snake back into the region.
+the current sequence number is not only out of the query region, but when we know there
+are no greater sequence numbers that will snake back into the region.
 
 Complexity is difficult to determine, because it is highly dependent on the number of
 event points indexed in a query region.  If there are few or no points to be found, the
-function returns rather quickly, since the next sequence it finds on the tree traversal
+function returns very quickly, since the next sequence it finds on the tree traversal
 is quickly identified as out of the region.  Performance is there dependent on the number
 of indexed events within the query region. 
 
 
 ## Module Commands
 
-The module implements the following commands to insert, delete, query and otherwise
+Reventis implements the following commands to insert, delete, query and otherwise
 interact with the index.  All mostly self-explanatory and discussed below.
 
 ```
@@ -51,8 +51,8 @@ reventis.insert key longitude latitude date-start time-start date-end time-end d
 ```
 
 Insert an event as defined by longitude, latititude and time duration.  Dates and times
-are denoted in the form MM-DD-YYYY HH:MM[:SS].  `descr` is a description string for the
-event and is inserted into the keyspace, key:id under the hashfield marked "descr".
+are denoted in the form MM-DD-YYYY HH:MM[:SS].  `descr` is a descriptive string for the
+event and is inserted into the keyspace, `key:<id>` under the hashfield marked "descr".
 An optional id integer can be provide. If not provided, one is assigned and returned by the
 command.  User can store additional information for the event in the `key:<id>` keyspace by
 making a new hashfield.  Complexity is O(log(N)), where N is is the number of indexed events.  
@@ -87,8 +87,8 @@ where K is the number of events found to delete, and N is the total number of in
 reventis.delkey key
 ```
 
-Delete a key of the module's datatype.  Use encourage instead of `del key`, since it deletes
-also deletes all the key:id keyspaces containing the `descr` fields.  However, use `del` to
+Delete a key of the module's datatype.  Use encourage instead of `del key`, since it also
+deletes all the key:id keyspaces containing the `descr` fields.  However, use `del` to
 preserve the `descr` strings.  Complexity is on the order of O(N), where N is the number of
 total events indexed.
 
@@ -106,7 +106,7 @@ reventis.query key x1 x2 y1 y2 t1 t2 [cat ...]
 Query the index for all the elements in a given range.  The longitude range is given by x1 to
 x2. The latitude range is given by y1 to y2.  The timespan is given by t1 to t2, where both
 are provided in the form MM-DD-YYYY HH:MM[:SS].  The command returns the results in the form
-of an array of arrays.  Each inner array being [descr, id, longitude, latitude, t1, t2].
+of an array of arrays.  Each inner array being [descr, id, longitude, latitude, time1, time2].
 Complexity varies widely, but is roughly on the order of O(Klog(N)), where K is the number of
 retrieved results, and N is the number of indexed events.
 
@@ -144,9 +144,9 @@ insert but for the object id.  `reventis.queryobj` queries for objects within a 
 range and returns the relevant events.  `reventis.trackall` does the same thing except
 returns a list of object ids falling within the query range.    
 
-You can then retrieve histories for a given object.  Supply optional date and time limits to
+You can then retrieve the histories for a given object.  Supply optional date and time limits to
 restrict the query to certain time limits.  An entire history of objects can be deleted with
-`reventis.delobj`.  Quick and ready access to all objects is ennabled by a directly mapped
+`reventis.delobj`.  Quick and ready access to all objects is enabled by a directly mapped
 data structure.  
 
 ```
@@ -155,7 +155,7 @@ reventis.update key longitude latitude date time  object_id descr [id]
 
 Update an object with another event.  Date and time are provided in the form MM-DD-YYYY
 and HH:MM[:SS].  The `descr` string is a descriptive string.  A unique event id will
-be assigned by the module.  This is the normal expected use, but an id can be provided.
+be assigned by the module.  This is the normal expected use, but an id can be optionally provided.
 Comlexity is on the order of O(log(N)), where N is the number of indexed events. 
 
 
