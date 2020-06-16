@@ -39,12 +39,15 @@ target_link_libraries(testreventis ${HIREDIS_DIR}/libhiredis.a)
 set_target_properties(testreventis PROPERTIES INCLUDE_DIRECTORIES ${HIREDIS_INCLUDE_DIRS})
 
 add_executable(testspfc test_spfc.cpp spfc.cpp)
+add_executable(testhaversine test_haversine.cpp haversine.cpp)
+target_link_libraries(testhaversine m)
 
 install(TARGETS reventis DESTINATION lib)
 
 enable_testing()
 add_test(NAME TestSpfc COMMAND testspfc)
 add_test(NAME TestReventis COMMAND testreventis)
+add_test(NAME TestHaversine COMMAND testhaversine)
 
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Event Indexing System")
 set(CPACK_PACKAGE_VENDOR "Aetilius")
