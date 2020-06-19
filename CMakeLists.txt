@@ -22,8 +22,11 @@ ExternalProject_Add(hiredis
   BUILD_COMMAND make static
   INSTALL_COMMAND echo install)
 
+find_package(Boost 1.67 COMPONENTS program_options)
+
 add_executable(loadevents loadevents.cpp)
-target_link_libraries(loadevents ${HIREDIS_DIR}/libhiredis.a)
+target_include_directories(loadevents PRIVATE ${Boost_INCLUDE_DIRS})
+target_link_libraries(loadevents ${HIREDIS_DIR}/libhiredis.a ${Boost_LIBRARIES})
 set_target_properties(loadevents PROPERTIES INCLUDE_DIRECTORIES ${HIREDIS_INCLUDE_DIRS})
 
 add_executable(queryevents queryevents.cpp)

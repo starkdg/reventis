@@ -9,9 +9,17 @@
 #include <random>
 #include <cassert>
 #include <unistd.h>
+#include <boost/program_options.hpp>
 #include "hiredis.h"
 
 using namespace std;
+namespace po = boost::program_options;
+
+struct Args {
+	string cmd, server, key, file;
+	int port, n;
+}; 
+
 
 static random_device rd;
 static mt19937 gen(rd());
@@ -24,6 +32,41 @@ static uniform_int_distribution<> hour_distr(0, 23);
 static uniform_int_distribution<> minute_distr(0, 59);
 static uniform_int_distribution<unsigned int> dur_distr(60*15, 3600*5);
 static uniform_int_distribution<> id_distr(1000000, 20000000);
+
+Args ParseOptions(int argc, char **argv){
+	Args args;
+	po::options_description descr("Reventis Client Options");
+	try {
+		descr.add_options()
+			("help,h", "produce help message")
+			("key,k", po::value<string>(&args.key)->required(), "redis key string")
+			("cmd,c", po::value<string>(&args.cmd)->required(), "command: events, objects, gen")
+			("server,s", po::value<string>(&args.server)->default_value("localhost"),
+			 "reids server hostname or unix socket path - e.g. localhost or 127.0.0.1")
+			 ("port,p", po::value<int>(&args.port)->default_value(6379), "redis server port")
+			("file,f", po::value<string>(&args.file)->default_value(""), "events file or objects file")
+			("num,n", po::value<int>(&args.n)->default_value(1000), "number of random events to add");
+
+		po::positional_options_description pd;
+		pd.add("cmd", 1);
+
+		po::variables_map vm;
+		po::store(po::command_line_parser(argc, argv).options(descr).positional(pd).run(), vm);
+
+		if (vm.count("help") || args.cmd == "help"){
+			cout << descr << endl;
+			exit(0);
+		}
+		po::notify(vm);
+		
+	} catch (const po::error &ex){
+		cout << descr << endl;
+		exit(0);
+	}
+
+	return args;
+}
+
 
 int genlonglat(double &x, double &y){
 	x = distr1(gen);
@@ -224,27 +267,18 @@ int LoadObjects(redisContext *c, const string &key, const string &file){
 	return count;
 }
 
+void print_header(){
+	cout << endl << "------------Reventis Client------------" << endl << endl;
+}
+
 
 int main(int argc, char **argv){
-	if (argc < 4){
-		cout << "not enough args" << endl;
-		cout << endl << "./load key [events|objects|gen] [file|n]" << endl << endl;
-		cout << "key  - key for redis db" << endl;
-		cout << "option  - events, objects or gen" << endl;
-		cout << "file|n - file for events, objects option" << endl;
-		cout << "         n integer for number to randomly generate" << endl;
-		exit(0);
-	}
+	print_header();
 
-	const string addr = "localhost";
-	const int port = 6379;
-	const string key = argv[1];
-	const string type = argv[2];
-	const string file = argv[3];
-	const int n_generate = atoi(argv[3]);
-								
-	cout << "Open connection to " << addr << ":" << port << endl;
-	redisContext *c = redisConnect(addr.c_str(), port);
+	Args args = ParseOptions(argc, argv);
+	
+	cout << "Open connection to " << args.server << ":" << args.port << endl;
+	redisContext *c = redisConnect(args.server.c_str(), args.port);
 	if (c == NULL || c->err){
 		if (c){
 			cout << "Error: " << c->errstr << endl;
@@ -254,23 +288,22 @@ int main(int argc, char **argv){
 		exit(0);
 	}
 
-	cout << "Submit using key = " << key << endl << endl;
+	cout << "Submit using key = " << args.key << endl << endl;
 	
-	if (!type.compare("events")){
-		cout << "Submit events from " << file << endl;
-		int n_events = LoadEvents(c, key, file);
+	if (args.cmd.compare("events") == 0){
+		cout << "Submit events from " << args.file << endl;
+		int n_events = LoadEvents(c, args.key, args.file);
 		cout << endl << n_events << " events successfully submitted" << endl;
-	} else if (!type.compare("objects")){
-		cout << "Submit objects from " << file << endl;
-		int n_objects = LoadObjects(c, key, file);
+	} else if (args.cmd.compare("objects") == 0){
+		cout << "Submit objects from " << args.file << endl;
+		int n_objects = LoadObjects(c, args.key, args.file);
 		cout << endl << n_objects << " objects successfully submitted" << endl;
-	} else if (!type.compare("gen")){
-		int n_generate = atoi(argv[3]);
-		cout << "Submit "  <<  n_generate << " randomly generated events" << endl;
-		int n_random = GenerateEvents(c, key, n_generate);
+	} else if (args.cmd.compare("gen") == 0){
+		cout << "Submit "  <<  args.n << " randomly generated events" << endl;
+		int n_random = GenerateEvents(c, args.key, args.n);
 		cout << endl << n_random << " events successfully submitted" << endl;
 	} else {
-		cout << endl << "Unrecognized option: " << type << endl;
+		cout << endl << "Unrecognized option: " << args.cmd << endl;
 	}
 	
 	cout << "Done." << endl;
