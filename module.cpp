@@ -1339,6 +1339,7 @@ extern "C" int RBTreeQueryByRadius_RedisCmd(RedisModuleCtx *ctx, RedisModuleStri
 	for (Result res : results){
 		if (cat_flag == 0 || (res.val.cat & cat_flag)){
 			if (res.val.obj_id == 0){
+
 				RedisModuleString *descr = GetDescriptionField(ctx, argv[1], res.val.id);
 				
 				strftime(s1, 64, datetime_fmt, gmtime(&(res.val.start)));
