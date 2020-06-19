@@ -87,6 +87,46 @@ void TestQuery(redisContext *c, const string &key){
 
 }
 
+void TestQueryByRadius(redisContext *c, const string &key){
+	double x = -72.334000, y =  41.5735, radius = 2.0;
+	string startdatestr = "12-01-2019";
+	string starttimestr = "12:00";
+	string enddatestr = "12-01-2019";
+	string endtimestr = "16:00";
+	int n = QueryByRadius(c, key, x, y, radius, startdatestr, starttimestr, enddatestr, endtimestr, 0);
+	assert(n == 3);
+
+	x = -72.218167;
+	y = 41.720165;
+	startdatestr = "10-09-2019";
+	enddatestr = "10-09-2019";
+	starttimestr = "12:00";
+	endtimestr = "18:00";
+	radius = 2.0;
+	n = QueryByRadius(c, key, x, y, radius, startdatestr, starttimestr, enddatestr, endtimestr, 0);
+	assert(n == 4);
+
+	x = -72.253100;
+	y = 41.807925;
+	startdatestr = "12-04-2019";
+	enddatestr = "12-04-2019";
+	starttimestr = "9:00";
+	endtimestr = "18:00";
+	radius = 10.0;
+	n = QueryByRadius(c, key, x, y, radius, startdatestr, starttimestr, enddatestr, endtimestr, 0);
+	assert(n == 6);
+
+	x = -100.112797;
+	y = 31.876599;
+	startdatestr = "01-01-2019";
+	enddatestr = "01-01-2020";
+	starttimestr = "12:00";
+	endtimestr = "12:00";
+	radius = 400;
+	n = QueryByRadius(c, key, x, y, radius, startdatestr, starttimestr, enddatestr, endtimestr, 0);
+	assert(n == 11);
+}
+
 void TestAddEventsCategoriesAndQuery(redisContext *c, const string &key){
 	double x = -97.797586;
 	double y = 30.318388;
@@ -246,9 +286,6 @@ int main(int argc, char **argv){
 	redisContext *c = redisConnect(addr.c_str(), port);
 	assert(c != NULL);
 
-	cout << "Flushall" << endl;
-	FlushAll(c, key);
-
 	cout << "Test Add Events " << endl;
 	TestAddEvents(c, key);
 
@@ -258,6 +295,8 @@ int main(int argc, char **argv){
 	cout << "Test Query" << endl;
 	TestQuery(c, key);
 
+	cout << "Test Query By Radius" << endl;
+	TestQueryByRadius(c, key);
 
 	cout << "Test Add Events With Categories" << endl;
 	TestAddEventsCategoriesAndQuery(c, key);
@@ -277,6 +316,10 @@ int main(int argc, char **argv){
 	cout << "Test Purge" << endl;
 	TestPurge(c, key);
 
+	cout << "Delete Key" << endl;
+	DeleteKey(c, key);
+	
+	
 	cout << "Done" << endl;
 	redisFree(c);
 

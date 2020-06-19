@@ -10,13 +10,13 @@ using namespace std;
 void test_haversine(){
 
 	Position a1;   // Hartford
-	a1.lon = -72.676311; 
-	a1.lat = 41.768115;
+	a1.x = -72.676311; 
+	a1.y = 41.768115;
 	
 
 	Position a2;   // Boston 
-	a2.lon = -71.020416;
-	a2.lat = 42.358930;
+	a2.x = -71.020416;
+	a2.y = 42.358930;
 
 	// 151.659746
 	cout << setprecision(numeric_limits<long double>::digits10 + 1);
@@ -28,12 +28,12 @@ void test_haversine(){
 	assert(fabs(dist1 - 151.659746) <= 1e-6);
 
 	Position b1; // NYC
-	b1.lon = -73.983360;
-	b1.lat = 40.727048;
+	b1.x = -73.983360;
+	b1.y = 40.727048;
 	
 	Position b2; // London
-	b2.lon = -0.094226;
-	b2.lat = 51.505058;
+	b2.x = -0.094226;
+	b2.y = 51.505058;
 
 	// 5570.030078 km
 	dist1 = haversine_distance(b1, b2);
@@ -45,12 +45,12 @@ void test_haversine(){
 	
 
 	Position c1; // Miami
-	c1.lon = -80.227401;
-	c1.lat = 25.762913;
+	c1.x = -80.227401;
+	c1.y = 25.762913;
 
 	Position c2; // Bakersfield CA
-	c2.lon = -119.075686;
-	c2.lat = 35.323697;
+	c2.x = -119.075686;
+	c2.y = 35.323697;
 
 	// 3842.368669 km
 	dist1 = haversine_distance(c1, c2);
@@ -61,12 +61,12 @@ void test_haversine(){
 	assert(fabs(dist1 - 3842.368669) <= 1e-06);
 	
 	Position d1; // Mexico City
-	d1.lon = -99.086630;
-	d1.lat = 19.386793;
+	d1.x = -99.086630;
+	d1.y = 19.386793;
 
 	Position d2; // Bogota, Columbia
-	d2.lon = -74.110563;
-	d2.lat = 4.581895;
+	d2.x = -74.110563;
+	d2.y = 4.581895;
 
 	// 3168.347571
 	dist1 = haversine_distance(d1, d2);
@@ -80,8 +80,8 @@ void test_haversine(){
 void test_get_xyradius(){
 
 	Position center; // Cragin
-	center.lon = -72.333344;
-	center.lat = 41.574519;
+	center.x = -72.333344;
+	center.y = 41.574519;
 
 	const double radius = 10; // 10 km
 	double xdelta, ydelta;
@@ -89,14 +89,14 @@ void test_get_xyradius(){
 
 
 	Position a;
-	a.lon = center.lon - xdelta;
-	a.lat = center.lat;
+	a.x = center.x - xdelta;
+	a.y = center.y;
 
 	Position b;
-	b.lon = center.lon + xdelta;
-	b.lat = center.lat;
+	b.x = center.x + xdelta;
+	b.y = center.y;
 
-	cout << "(" << a.lon << "," << a.lat << ") to (" << b.lon << "," << b.lat << ")" << endl;
+	cout << "(" << a.x << "," << a.y << ") to (" << b.x << "," << b.y << ")" << endl;
 	double d1 = haversine_distance(a, b);
 	double d2 = haversine_distance(b, a);
 	cout << "distance = " << d1 << endl;
@@ -106,12 +106,12 @@ void test_get_xyradius(){
 	assert(fabs(d1 - 20.000000) <= 0.0001);
 
 
-	a.lon = center.lon - xdelta;
-	a.lat = center.lat - ydelta;
-	b.lon = center.lon + xdelta;
-	b.lat = center.lat + ydelta;
+	a.x = center.x - xdelta;
+	a.y = center.y - ydelta;
+	b.x = center.x + xdelta;
+	b.y = center.y + ydelta;
 
-	cout << "(" << a.lon << "," << a.lat << ") to (" << b.lon << "," << b.lat << ")" << endl;
+	cout << "(" << a.x << "," << a.y << ") to (" << b.x << "," << b.y << ")" << endl;
 	d1 = haversine_distance(a, b);
 	d2 = haversine_distance(b, a);
 	cout << "distance = " << d1 << endl;

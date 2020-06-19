@@ -2,8 +2,8 @@
 #define _HAVERSINE_H
 
 typedef struct pos_t {
-	double lon; 
-	double lat;
+	double x; 
+	double y;
 } Position;
 
 double haversine_distance(const Position &a, const Position &b);

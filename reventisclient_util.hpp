@@ -32,13 +32,17 @@ int GetSize(redisContext *c, const string &key);
 
 
 
-void FlushAll(redisContext *c, const string &key);
+void DeleteKey(redisContext *c, const string &key);
 
 
 int Query(redisContext *c, const string &key, const double x1, const double x2,
 		  const double y1, const double y2, const string &startdate, const string &starttime,
 		  const string &enddate, const string &endtime, int n, ...);
 
+int QueryByRadius(redisContext *c, const string &key,
+				  const double x, const double y, const double radius,
+				  const string &startdate, const string &starttime,
+				  const string &enddate, const string &endtime, int n, ...);
 
 int ObjectHistory(redisContext *c, const string &key, const long long object_id);
 

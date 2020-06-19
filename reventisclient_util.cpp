@@ -167,8 +167,8 @@ int GetSize(redisContext *c, const string &key){
 }
 
 
-void FlushAll(redisContext *c, const string &key){
-	redisReply *reply = (redisReply*)redisCommand(c, "flushall");
+void DeleteKey(redisContext *c, const string &key){
+	redisReply *reply = (redisReply*)redisCommand(c, "reventis.delkey %s", key.c_str());
 	if (reply == NULL || reply->type != REDIS_REPLY_STATUS){
 		throw runtime_error("bad reply");
 	}
@@ -204,6 +204,14 @@ static int ProcessArrayReply(redisReply *reply){
 			count++;
 		}
 		cout << "------------------" << endl;
+	} else if (reply && reply->type == REDIS_REPLY_ERROR){
+		cout << "Error - " << reply->str << endl;
+	} else if (reply && reply->type == REDIS_REPLY_STRING){
+		cout << "Str - " << reply->str << endl;
+	} else if (reply && reply->type == REDIS_REPLY_STATUS){
+		cout << "Status - " << reply->str << endl;
+	} else if (reply && reply->type == REDIS_REPLY_INTEGER){
+		cout <<  reply->integer << endl;
 	} else {
 		throw runtime_error("bad reply");
 	}
@@ -223,6 +231,30 @@ int Query(redisContext *c, const string &key,
 			 startdate.c_str(), starttime.c_str(),
 			 enddate.c_str(), endtime.c_str());
 
+	va_list ap;
+	va_start(ap, n);
+	for (int i=0;i<n;i++){
+		string catidstr = to_string(va_arg(ap, int)) + " ";
+		strncat(cmd, catidstr.c_str(), catidstr.size());
+	}
+	va_end(ap);
+
+	redisReply *reply = (redisReply*)redisCommand(c, cmd);
+	int count = ProcessArrayReply(reply);
+	cout << "( " << count << " results)" << endl;
+	freeReplyObject(reply);
+	return count;
+}
+
+
+int QueryByRadius(redisContext *c, const string &key,
+				  const double x, const double y, const double radius,
+				  const string &startdate, const string &starttime,
+				  const string &enddate, const string &endtime, int n, ...){
+	char cmd[256];
+	snprintf(cmd, 256, "reventis.querybyradius %s %f %f %f %s %s %s %s %s ",
+			 key.c_str(), x, y, radius, "km", startdate.c_str(), starttime.c_str(),
+			 enddate.c_str(), endtime.c_str());
 	va_list ap;
 	va_start(ap, n);
 	for (int i=0;i<n;i++){

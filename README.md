@@ -112,6 +112,14 @@ retrieved results, and N is the number of indexed events.
 
 
 ```
+reventis.querybyradius key longitude latitude radius mi|km|ft|m date-start time-start date-end time-end [cat_id ...]
+```
+
+Query the index for all elements within a given radius.  Radius units are specified in the next
+argument as either mi, km, ft or m. Returns the result as an array of arrays. Each inner array
+composed of [descr, id, longitude, latitude, t1, t2].  Complexity same as query.
+
+```
 reventis.addcategory key event_id [cat ...]
 reventis.remcategory key event_id [cat ...]
 ```
