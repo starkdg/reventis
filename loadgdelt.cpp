@@ -7,9 +7,16 @@
 #include <cstring>
 #include <ctime>
 #include <cassert>
+#include <boost/program_options.hpp>
 #include <hiredis.h>
 
 using namespace std;
+namespace po = boost::program_options;
+
+struct Args {
+	string server, key, file;
+	int port;
+};
 
 typedef struct entry_t {
 	long long id;
@@ -36,6 +43,33 @@ typedef struct entry_t {
 	string source_url;
 	
 } Entry;
+
+Args ParseOptions(int argc, char **argv){
+	Args args;
+	po::options_description descr("Reventis Load GDELT Data");
+	try {
+		descr.add_options()
+			("help,h", "produce help message")
+			("key,k", po::value<string>(&args.key)->required(), "redis key")
+			("server,s", po::value<string>(&args.server)->default_value("localhost"), "redis server address")
+			("port,p", po::value<int>(&args.port)->default_value(6379), "redis server port")
+			("file,f", po::value<string>(&args.file)->default_value(""), "GDELT events file");
+
+		po::variables_map vm;
+		po::store(po::command_line_parser(argc, argv).options(descr).run(), vm);
+
+		if (vm.count("help")){
+			cout << descr << endl;
+			exit(0);
+		}
+		po::notify(vm);
+	} catch (const po::error &ex){
+		cout << descr << endl;
+		exit(0);
+	}
+
+	return args;
+}
 
 void skip_tabs(stringstream &ss, const int n){
 	for (int i=0;i<n;i++){
@@ -168,21 +202,17 @@ int LoadGdelEvents(redisContext *c, const string &key, const string &file){
 	return count;
 }
 
-int main(int argc, char **argv){
-	if (argc < 3){
-		cout << "not enough args" << endl;
-		cout << ".load <key> <file>" << endl;
-		exit(0);
-	}
-	const string key = argv[1];
-	const string file = argv[2];
-	
-	const string addr = "localhost";
-	const int port = 6379;
+void print_header(){
+	cout << endl << "-------------Reventis Load GDELT Data--------------" << endl << endl;
+}
 
-	cout << "Open connection to " << addr << ":" << port << endl;
+int main(int argc, char **argv){
+	print_header();
+	Args args = ParseOptions(argc, argv);
 	
-	redisContext *c = redisConnect(addr.c_str(), port);
+	cout << "Open connection to " << args.server << ":" << args.port << endl;
+	
+	redisContext *c = redisConnect(args.server.c_str(), args.port);
 	if (c == NULL || c->err){
 		if (c) {
 			cout << "Error: " << c->errstr << endl;
@@ -193,10 +223,10 @@ int main(int argc, char **argv){
 		exit(EXIT_FAILURE);
 	}
 
-	cout << "Submit using key = " << key << endl << endl;
-	cout << "Submit events from " << file << endl;
+	cout << "Submit using key = " << args.key << endl << endl;
+	cout << "Submit events from " << args.file << endl;
 	
-	int n = LoadGdelEvents(c, key, file);
+	int n = LoadGdelEvents(c, args.key, args.file);
 	cout << endl << n  << " events successfully submited" << endl;
 
 	cout << "Done." << endl;

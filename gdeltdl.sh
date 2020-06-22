@@ -14,6 +14,9 @@ key="gdelt"
 #content_regexp="gdeltv2/YYYYMMDD[0-9].*.export.CSV.zip"
 content_regexp="gdeltv2/2016[0-9].*.export.CSV.zip"
 
+redis_server="localhost:6379"
+redis_port=6379
+
 content=$(curl -v --silent ${gdelt_url} --stderr - | grep $content_regexp)
 
 read -d "\n" -a content_components <<< "$content"
@@ -38,7 +41,7 @@ for ((n=0;n<${n_elements};n=n+3)) ; do
 
 	echo ${current_url} " --> " ${csv_file_name}
 	
-	./loadgdelt ${key} /tmp/${csv_file_name} > /dev/null 2>&1
+	./loadgdelt -k ${key} -s ${redis_server} -p ${redis_port} -f /tmp/${csv_file_name} > /dev/null 2>&1
 	
 	rm -rf /tmp/${compressed_file_name} /tmp/${csv_file_name}
 	
