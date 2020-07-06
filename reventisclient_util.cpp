@@ -252,7 +252,7 @@ int QueryByRadius(redisContext *c, const string &key,
 				  const string &startdate, const string &starttime,
 				  const string &enddate, const string &endtime, int n, ...){
 	char cmd[256];
-	snprintf(cmd, 256, "reventis.querybyradius %s %f %f %f %s %s %s %s %s ",
+	snprintf(cmd, 256, "reventis.queryradius %s %f %f %f %s %s %s %s %s ",
 			 key.c_str(), x, y, radius, "km", startdate.c_str(), starttime.c_str(),
 			 enddate.c_str(), endtime.c_str());
 	va_list ap;

@@ -1184,6 +1184,115 @@ extern "C" int RBTreeDelBlk_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **ar
 	return REDISMODULE_OK;
 }
 
+/* args: mytree longitude latitude radius unit date-start time-start date-end time-end [cat_id ...] */
+extern "C" int RBTreeDelBlkByRadius_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc){
+	if (argc < 10) return RedisModule_WrongArity(ctx);
+	RedisModule_AutoMemory(ctx);
+
+	chrono::time_point<chrono::high_resolution_clock> start = chrono::high_resolution_clock::now();
+
+    RBTree *tree = NULL;
+	try {
+		tree = GetRBTree(ctx, argv[1]);
+		if (tree == NULL){
+			RedisModule_ReplyWithError(ctx, "ERR - no such key existts");
+			return REDISMODULE_ERR;
+		}
+	} catch (int &e){
+		RedisModule_ReplyWithError(ctx, "key exists for different type");
+		return REDISMODULE_ERR;
+	}
+
+	Position pt;
+	if (ParseLongLat(argv[2], argv[3], pt.x, pt.y) < 0){
+		RedisModule_ReplyWithError(ctx, "ERR - Unable to parse lower longitude/latitude arg values");
+		return REDISMODULE_ERR;
+	}
+
+	double radius;
+	if (ParseRadius(argv[4], argv[5], radius) < 0){
+		RedisModule_ReplyWithError(ctx, "ERR - Unable to parse radius");
+		return REDISMODULE_ERR;
+	}
+
+	time_t t1, t2;
+	if (ParseDateTime(argv[6], argv[7], t1) < 0){
+		RedisModule_ReplyWithError(ctx, "ERR - Unable to parse lower date time arg values");
+		return REDISMODULE_ERR;
+	}
+
+	if (ParseDateTime(argv[8], argv[9], t2) < 0){
+		RedisModule_ReplyWithError(ctx, "ERR - Unable to parse upper date time arg values");
+		return REDISMODULE_ERR;
+	}
+
+	if (t1 > t2){
+		RedisModule_ReplyWithError(ctx, "ERR - start time cannot be later than end time");
+		return REDISMODULE_ERR;
+	}
+
+	unsigned long long cat_flag = 0;
+	for (int i=10;i<argc;i++){
+		long long catid;
+		if (RedisModule_StringToLongLong(argv[i], &catid) != REDISMODULE_OK){
+			RedisModule_ReplyWithError(ctx, "ERR - Unable to parse category id value");
+			return REDISMODULE_ERR;
+		}
+		if (catid < 1 || catid > 64){
+			RedisModule_ReplyWithError(ctx, "ERR - category values out of range");
+			return REDISMODULE_ERR;
+		}
+		cat_flag |= 0x0001ULL << (catid - 1);
+	}
+
+
+
+	double xdelta, ydelta;
+	get_xyradius(pt, radius, xdelta, ydelta);
+
+	QueryRegion qr;
+	qr.x_lower = pt.x - xdelta;
+	qr.x_upper = pt.x + xdelta;
+	qr.y_lower = pt.y - ydelta;
+	qr.y_upper = pt.y + ydelta;
+	qr.t_lower = t1;
+	qr.t_upper = t2;
+
+	vector<Result> results;
+	if (RBTreeQuery(tree, qr, results) < 0){
+		RedisModule_ReplyWithError(ctx, "Err - Unable to query");
+		return REDISMODULE_ERR;
+	}
+
+	long long count = 0;
+	for (Result res : results){
+		Position r;
+		r.x = res.val.x;
+		r.y = res.val.y;
+		if (haversine_distance(pt, r) < radius){
+			if (cat_flag == 0 || (res.val.cat & cat_flag)){
+				if (res.val.obj_id == 0){
+
+					if (RBTreeDelete(ctx, tree, res.s, res.val.id) < 0){
+						RedisModule_ReplyWithError(ctx, "ERR - unable to delete");
+						return REDISMODULE_ERR;
+					}
+					count++;
+				}
+			}
+		}
+	}
+
+	/* reply with number of deletes performed */
+	RedisModule_ReplyWithLongLong(ctx, count);
+	RedisModule_ReplicateVerbatim(ctx);
+
+	chrono::time_point<chrono::high_resolution_clock> end = chrono::high_resolution_clock::now();
+	auto elapsed = chrono::duration_cast<chrono::microseconds>(end - start).count();
+	unsigned int dur = elapsed;
+	RedisModule_Log(ctx, "debug", "delete block in %u microseconds", dur);
+	return REDISMODULE_OK;
+}
 
 /* args: mytree longitude-range latitude-range start-range end-range [cat_id ...] */
 extern "C" int RBTreeQuery_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc){
@@ -1337,14 +1446,15 @@ extern "C" int RBTreeQueryByRadius_RedisCmd(RedisModuleCtx *ctx, RedisModuleStri
 	/* reply with results in embedded arrays */
 	RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
 	for (Result res : results){
-		if (cat_flag == 0 || (res.val.cat & cat_flag)){
-			if (res.val.obj_id == 0){
+		Position r;
+		r.x = res.val.x;
+		r.y = res.val.y;
 
+		if (cat_flag == 0 || (res.val.cat & cat_flag)){
+			if (haversine_distance(pt, r) < radius && res.val.obj_id == 0){
 				RedisModuleString *descr = GetDescriptionField(ctx, argv[1], res.val.id);
-				
 				strftime(s1, 64, datetime_fmt, gmtime(&(res.val.start)));
 				strftime(s2, 64, datetime_fmt, gmtime(&(res.val.end)));
-
 				RedisModule_ReplyWithArray(ctx, 6);
 				RedisModule_ReplyWithString(ctx, descr);
 				RedisModule_ReplyWithLongLong(ctx, res.val.id);
@@ -1607,7 +1717,6 @@ extern "C" int RBTreeQueryObjects_RedisCmd(RedisModuleCtx *ctx, RedisModuleStrin
 		return REDISMODULE_ERR;
 	}
 
-	const char *out_fmt = "%s id=%lld obj=%lld long.=%f lat.=%f time=%s";
 	char s1[32];
 
 	/* return results in embedded arrays */
@@ -1615,6 +1724,102 @@ extern "C" int RBTreeQueryObjects_RedisCmd(RedisModuleCtx *ctx, RedisModuleStrin
 	RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
 	for (Result res: results){
 		if (res.val.obj_id > 0) {
+			RedisModuleString *descr = GetDescriptionField(ctx, argv[1], res.val.id);
+			strftime(s1, 32, datetime_fmt, gmtime(&(res.val.start)));
+			RedisModule_ReplyWithArray(ctx, 6);
+			RedisModule_ReplyWithString(ctx, descr);
+			RedisModule_ReplyWithLongLong(ctx, res.val.id);
+			RedisModule_ReplyWithLongLong(ctx, res.val.obj_id);
+			RedisModule_ReplyWithDouble(ctx, res.val.x);
+			RedisModule_ReplyWithDouble(ctx, res.val.y);
+			RedisModule_ReplyWithStringBuffer(ctx, s1, strlen(s1)+1);
+			count++;
+		}
+	}
+	RedisModule_ReplySetArrayLength(ctx, count);
+	
+	chrono::time_point<chrono::high_resolution_clock> end = chrono::high_resolution_clock::now();
+	auto elapsed = chrono::duration_cast<chrono::microseconds>(end - start).count();
+	unsigned int dur = elapsed;
+	RedisModule_Log(ctx, "debug", "query objects in  %u microseconds", dur);
+
+	return REDISMODULE_OK;
+}
+
+/* args: key longitude latitude radius unit date-start time-start date-end time-end */
+extern "C" int RBTreeQueryObjectsByRadius_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc){
+	if (argc != 10) return RedisModule_WrongArity(ctx);
+	RedisModule_AutoMemory(ctx);
+
+	chrono::time_point<chrono::high_resolution_clock> start = chrono::high_resolution_clock::now();
+
+    RBTree *tree = NULL;
+	try {
+		tree = GetRBTree(ctx, argv[1]);
+		if (tree == NULL){
+			RedisModule_ReplyWithError(ctx, "ERR - no such key existts");
+			return REDISMODULE_ERR;
+		}
+	} catch (int &e){
+		RedisModule_ReplyWithError(ctx, "key exists for different type");
+		return REDISMODULE_ERR;
+	}
+
+	Position pt;
+	if (ParseLongLat(argv[2], argv[3], pt.x, pt.y) < 0){
+		RedisModule_ReplyWithError(ctx, "ERR - Unable to parse lower longitude/latitude arg values");
+		return REDISMODULE_ERR;
+	}
+
+	double radius;
+	if (ParseRadius(argv[4], argv[5], radius) < 0){
+		RedisModule_ReplyWithError(ctx, "ERR - Unable to parse radius");
+		return REDISMODULE_ERR;
+	}
+
+	time_t t1, t2;
+	if (ParseDateTime(argv[6], argv[7], t1) < 0){
+		RedisModule_ReplyWithError(ctx, "ERR - Unable to parse lower date time arg values");
+		return REDISMODULE_ERR;
+	}
+
+	if (ParseDateTime(argv[8], argv[9], t2) < 0){
+		RedisModule_ReplyWithError(ctx, "ERR - Unable to parse upper date time arg values");
+		return REDISMODULE_ERR;
+	}
+
+	if (t1 > t2){
+		RedisModule_ReplyWithError(ctx, "ERR - start time cannot be later than end time");
+		return REDISMODULE_ERR;
+	}
+
+	double xdelta, ydelta;
+	get_xyradius(pt, radius, xdelta, ydelta);
+
+	QueryRegion qr;
+	qr.x_lower = pt.x - xdelta;
+	qr.x_upper = pt.x + xdelta;
+	qr.y_lower = pt.y - ydelta;
+	qr.y_upper = pt.y + ydelta;
+	qr.t_lower = t1;
+	qr.t_upper = t2;
+
+	vector<Result> results;
+	if (RBTreeQuery(tree, qr, results) < 0){
+		RedisModule_ReplyWithError(ctx, "ERR - unable to complete query");
+		return REDISMODULE_ERR;
+	}
+
+	char s1[32];
+
+	/* return results in embedded arrays */
+	long count = 0;
+	RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
+	for (Result res: results){
+		Position r;
+		r.x = res.val.x;
+		r.y = res.val.y;
+		if (haversine_distance(pt, r) < radius && res.val.obj_id > 0) {
 			RedisModuleString *descr = GetDescriptionField(ctx, argv[1], res.val.id);
 
 			strftime(s1, 32, datetime_fmt, gmtime(&(res.val.start)));
@@ -1626,12 +1831,6 @@ extern "C" int RBTreeQueryObjects_RedisCmd(RedisModuleCtx *ctx, RedisModuleStrin
 			RedisModule_ReplyWithDouble(ctx, res.val.x);
 			RedisModule_ReplyWithDouble(ctx, res.val.y);
 			RedisModule_ReplyWithStringBuffer(ctx, s1, strlen(s1)+1);
-		
-			RedisModuleString *resp = RedisModule_CreateStringPrintf(ctx, out_fmt,
-									   RedisModule_StringPtrLen(descr, NULL),
-									   res.val.id, res.val.obj_id,
-								       res.val.x, res.val.y, s1);
-			RedisModule_ReplyWithString(ctx, resp);
 			count++;
 		}
 	}
@@ -1641,7 +1840,7 @@ extern "C" int RBTreeQueryObjects_RedisCmd(RedisModuleCtx *ctx, RedisModuleStrin
 	auto elapsed = chrono::duration_cast<chrono::microseconds>(end - start).count();
 	unsigned int dur = elapsed;
 	RedisModule_Log(ctx, "debug", "query objects in  %u microseconds", dur);
-
+	
 	return REDISMODULE_OK;
 }
 
@@ -1675,6 +1874,94 @@ extern "C" int RBTreeTrackAll_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **
 	unsigned int dur = elapsed;
 	RedisModule_Log(ctx, "debug", "trackall time - %u microseconds", dur);
 
+	return REDISMODULE_OK;
+}
+
+/* args: key longitude latitude radius unit date-start time-start date-end time-end */
+extern "C" int RBTreeTrackAllByRadius_RedisCmd(RedisModuleCtx *ctx, RedisModuleString **argv, int argc){
+	if (argc != 10) return RedisModule_WrongArity(ctx);
+	RedisModule_AutoMemory(ctx);
+
+	chrono::time_point<chrono::high_resolution_clock> start = chrono::high_resolution_clock::now();
+
+    RBTree *tree = NULL;
+	try {
+		tree = GetRBTree(ctx, argv[1]);
+		if (tree == NULL){
+			RedisModule_ReplyWithError(ctx, "ERR - no such key existts");
+			return REDISMODULE_ERR;
+		}
+	} catch (int &e){
+		RedisModule_ReplyWithError(ctx, "key exists for different type");
+		return REDISMODULE_ERR;
+	}
+
+	Position pt;
+	if (ParseLongLat(argv[2], argv[3], pt.x, pt.y) < 0){
+		RedisModule_ReplyWithError(ctx, "ERR - Unable to parse lower longitude/latitude arg values");
+		return REDISMODULE_ERR;
+	}
+
+	double radius;
+	if (ParseRadius(argv[4], argv[5], radius) < 0){
+		RedisModule_ReplyWithError(ctx, "ERR - Unable to parse radius");
+		return REDISMODULE_ERR;
+	}
+
+	time_t t1, t2;
+	if (ParseDateTime(argv[6], argv[7], t1) < 0){
+		RedisModule_ReplyWithError(ctx, "ERR - Unable to parse lower date time arg values");
+		return REDISMODULE_ERR;
+	}
+
+	if (ParseDateTime(argv[8], argv[9], t2) < 0){
+		RedisModule_ReplyWithError(ctx, "ERR - Unable to parse upper date time arg values");
+		return REDISMODULE_ERR;
+	}
+
+	if (t1 > t2){
+		RedisModule_ReplyWithError(ctx, "ERR - start time cannot be later than end time");
+		return REDISMODULE_ERR;
+	}
+
+	double xdelta, ydelta;
+	get_xyradius(pt, radius, xdelta, ydelta);
+
+	QueryRegion qr;
+	qr.x_lower = pt.x - xdelta;
+	qr.x_upper = pt.x + xdelta;
+	qr.y_lower = pt.y - ydelta;
+	qr.y_upper = pt.y + ydelta;
+	qr.t_lower = t1;
+	qr.t_upper = t2;
+
+	vector<Result> results;
+	if (RBTreeQuery(tree, qr, results) < 0){
+		RedisModule_ReplyWithError(ctx, "ERR - unable to complete query");
+		return REDISMODULE_ERR;
+	}
+
+	set<long long> objects;
+	for (Result res : results){
+		Position r;
+		r.x = res.val.x;
+		r.y = res.val.y;
+		if (haversine_distance(pt, r) < radius && res.val.obj_id > 0){
+			objects.insert(res.val.obj_id);
+		}
+	}
+
+	/* return array of object_id's found */
+	RedisModule_ReplyWithArray(ctx, objects.size());
+	for (auto iter=objects.begin();iter != objects.end();iter++){
+		RedisModule_ReplyWithLongLong(ctx, *iter);
+	}
+
+	chrono::time_point<chrono::high_resolution_clock> end = chrono::high_resolution_clock::now();
+	auto elapsed = chrono::duration_cast<chrono::microseconds>(end - start).count();
+	unsigned int dur = elapsed;
+	RedisModule_Log(ctx, "debug", "trackall time - %u microseconds", dur);
+	
 	return REDISMODULE_OK;
 }
 
@@ -1922,12 +2209,16 @@ extern "C" int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv,
 	if (RedisModule_CreateCommand(ctx, "reventis.delblk", RBTreeDelBlk_RedisCmd,
 								  "write deny-oom", 1, -1, 1) == REDISMODULE_ERR)
 		return REDISMODULE_ERR;
+
+	if (RedisModule_CreateCommand(ctx, "reventis.delblkradius", RBTreeDelBlkByRadius_RedisCmd,
+								  "write deny-oom", 1, -1, 1) == REDISMODULE_ERR)
+		return REDISMODULE_ERR;
 	
 	if (RedisModule_CreateCommand(ctx, "reventis.query", RBTreeQuery_RedisCmd,
 								  "readonly", 1, -1, 1) == REDISMODULE_ERR)
 		return REDISMODULE_ERR;
 
-	if (RedisModule_CreateCommand(ctx, "reventis.querybyradius", RBTreeQueryByRadius_RedisCmd,
+	if (RedisModule_CreateCommand(ctx, "reventis.queryradius", RBTreeQueryByRadius_RedisCmd,
 								  "readonly", 1, -1, 1) == REDISMODULE_ERR)
 		return REDISMODULE_ERR;
 	
@@ -1945,7 +2236,7 @@ extern "C" int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv,
 
 	/* ------------- object-tracking commands --------------------------*/
 
-	if (RedisModule_CreateCommand(ctx, "reventis.updaterepl", RBTreeUpdate_RedisCmd,
+	if (RedisModule_CreateCommand(ctx, "reventis.updaterepl", RBTreeUpdateRepl_RedisCmd,
 								  "write deny-oom fast", 1, -1, 1) == REDISMODULE_ERR)
 		return REDISMODULE_ERR;
 	
@@ -1956,8 +2247,16 @@ extern "C" int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv,
 	if (RedisModule_CreateCommand(ctx, "reventis.queryobj", RBTreeQueryObjects_RedisCmd,
 								  "readonly", 1, -1, 1) == REDISMODULE_ERR)
 		return REDISMODULE_ERR;
+
+	if (RedisModule_CreateCommand(ctx, "reventis.queryobjradius", RBTreeQueryObjectsByRadius_RedisCmd,
+								  "readonly", 1, -1, 1) == REDISMODULE_ERR)
+		return REDISMODULE_ERR;
 	
 	if (RedisModule_CreateCommand(ctx, "reventis.trackall", RBTreeTrackAll_RedisCmd,
+								  "readonly", 1, -1, 1) == REDISMODULE_ERR)
+		return REDISMODULE_ERR;
+
+	if (RedisModule_CreateCommand(ctx, "reventis.trackallradius", RBTreeTrackAllByRadius_RedisCmd,
 								  "readonly", 1, -1, 1) == REDISMODULE_ERR)
 		return REDISMODULE_ERR;
 
