@@ -90,7 +90,7 @@ deleted events.  Complexity varies widely but is roughly on the order of O(Klog(
 where K is the number of events found to delete, and N is the total number of indexed events. 
 
 ```
-reventis.delblk key longitude latitude radius [mi|km|ft|m] date-start time-start date-end time-end [category ...]
+reventis.delblkradius key longitude latitude radius [mi|km|ft|m] date-start time-start date-end time-end [category ...]
 ```
 
 Same as above.  Deletes a blog of events that fall within a given radius from a geospatial point. 
