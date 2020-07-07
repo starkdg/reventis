@@ -86,6 +86,12 @@ deleted events.  Complexity varies widely but is roughly on the order of O(Klog(
 where K is the number of events found to delete, and N is the total number of indexed events. 
 
 ```
+reventis.delblk key longitude latitude radius [mi|km|ft|m] date-start time-start date-end time-end [category ...]
+```
+
+Same as above.  Deletes a blog of events that fall within a given radius from a geospatial point. 
+
+```
 reventis.delkey key
 ```
 
@@ -178,11 +184,25 @@ Complexity varies widely, but is roughly on the order O(Klog(N)), where K is the
 of retrieved objects and N is the number of indexed events.
 
 ```
+reventis.queryobjradius key longitude latitude radius [mi|km|ft|m] t1 t2
+```
+
+Same as above, but query for all objects within radius distance from geo-spatial point.
+
+
+```
 reventis.trackall key x1 x2 y1 y2 t1 t2
 ```
 
 Returns a list of object integer ids that fall in a given range.  Complexity varies widely,
 but roughly on the order of O(klog(N));
+
+```
+reventis.trackallradius key longitude latitude radius [mi|km|ft|m] t1 t2
+```
+
+Same as above, but retrieve a list of object identifiers that fall within a radius distance from
+geo-spatial coordinate.  
 
 ```
 reventis.hist key object_id [t1 t2]
