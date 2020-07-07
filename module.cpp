@@ -1245,8 +1245,6 @@ extern "C" int RBTreeDelBlkByRadius_RedisCmd(RedisModuleCtx *ctx, RedisModuleStr
 		cat_flag |= 0x0001ULL << (catid - 1);
 	}
 
-
-
 	double xdelta, ydelta;
 	get_xyradius(pt, radius, xdelta, ydelta);
 
@@ -1272,7 +1270,6 @@ extern "C" int RBTreeDelBlkByRadius_RedisCmd(RedisModuleCtx *ctx, RedisModuleStr
 		if (haversine_distance(pt, r) < radius){
 			if (cat_flag == 0 || (res.val.cat & cat_flag)){
 				if (res.val.obj_id == 0){
-
 					if (RBTreeDelete(ctx, tree, res.s, res.val.id) < 0){
 						RedisModule_ReplyWithError(ctx, "ERR - unable to delete");
 						return REDISMODULE_ERR;
