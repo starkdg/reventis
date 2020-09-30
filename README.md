@@ -365,6 +365,13 @@ The latter option is preferable, since it is impossible to simply unload
 the module once data is inserted into the database. 
 
 
+To try it out in  a docker container:
+
+```
+docker build --tag reventis:0.4 .
+docker run --detach --publish 6379:6379 --mount src=reventisdata,dst=/data --name reventis reventis:0.4
+```
+
 
 
 
