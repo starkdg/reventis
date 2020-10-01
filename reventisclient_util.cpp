@@ -45,8 +45,10 @@ int LoadEvents(redisContext *c, const string &key, const string &file){
 
 		if (reply && reply->type == REDIS_REPLY_INTEGER){
 			count++;
+		}  else if (reply && reply->type == REDIS_REPLY_ERROR){
+			throw runtime_error(reply->str);
 		}  else {
-			throw runtime_error("bad reply");
+			throw runtime_error("bad reply - no context");
 		}
 		freeReplyObject(reply);
 	}

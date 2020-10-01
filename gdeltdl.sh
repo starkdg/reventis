@@ -12,7 +12,7 @@ key="gdelt"
 #content_regexp="gdeltv2/YYYY[0-9].*.export.CSV.zip"
 #content_regexp="gdelv2/YYYYYMM[0-9].*.export.CSV.zip"
 #content_regexp="gdeltv2/YYYYMMDD[0-9].*.export.CSV.zip"
-content_regexp="gdeltv2/2016[0-9].*.export.CSV.zip"
+content_regexp="gdeltv2/201601[0-9].*.export.CSV.zip"
 
 redis_server="localhost"
 redis_port=6379
