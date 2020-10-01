@@ -162,8 +162,9 @@ int LoadGdelEvents(redisContext *c, const string &key, const string &file){
 	ifstream input(file);
 
 	redisReply *reply;
-	const char *cmd_fmt = "reventis.insertwithcat %s %f %f %s %s %s %s %s %d";
-
+	const char *cmd_fmt = "reventis.insert %s %f %f %s %s %s %s %s";
+	const char *cmd_fmt2 = "reventis.addcategory %s %ld %d";
+	
 	char cmd[512];
 	char datestr[32];
 	char timestr[32];
@@ -179,22 +180,33 @@ int LoadGdelEvents(redisContext *c, const string &key, const string &file){
 				" tone = " + to_string(e.avg_tone) + " " + e.source_url;
 			
 			snprintf(cmd, 512, cmd_fmt, key.c_str(), e.longitude, e.latitude,
-					 datestr, timestr, datestr, timestr, descr.c_str(), e.eventrootcode);
+					 datestr, timestr, datestr, timestr, descr.c_str());
 			
 			cout << "send => " << cmd << endl;
 			reply = (redisReply*)redisCommand(c, cmd_fmt, key.c_str(), e.longitude, e.latitude,
-											  datestr, timestr, datestr, timestr, descr.c_str(), e.eventrootcode);
+											  datestr, timestr, datestr, timestr, descr.c_str());
+			long long event_id;
 			if (reply && reply->type == REDIS_REPLY_INTEGER){
 				count++;
 				cout << "reply => event id = " << reply->integer << endl;
+				event_id = reply->integer;
 			} else if (reply && reply->type == REDIS_REPLY_ERROR){
-				cout << "ERR - error submitting entry: " << reply->str << endl;
+				cerr << "ERR - error submitting entry: " << reply->str << endl;
 				freeReplyObject(reply);
 				return count;
 			} else if (reply == NULL){
-				cout << "ERR - no reply" << endl;
+				cerr << "ERR - no reply" << endl;
 				return count;
 			}
+			freeReplyObject(reply);
+
+			/* attach category */
+			reply = (redisReply*)redisCommand(c, cmd_fmt2, key.c_str(), event_id, e.eventrootcode);
+			if (!(reply && (reply->type == REDIS_REPLY_STATUS || reply->type == REDIS_REPLY_STRING))){
+				cerr << "ERR: " << reply->str << endl;
+				freeReplyObject(reply);
+				return count;
+			}	
 			freeReplyObject(reply);
 		}
 	
