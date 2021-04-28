@@ -13,8 +13,7 @@ int LoadEvents(redisContext *c, const string &key, const string &file);
 
 
 long long AddEvent(redisContext *c, const string &key, const double x, const double y,
-				   const string &startdate, const string &starttime,
-				   const string &enddate, const string &endtime, const string &descr);
+				   const string &startdatetime, const string &enddatetime, const string &descr);
 
 
 
@@ -36,34 +35,31 @@ void DeleteKey(redisContext *c, const string &key);
 
 
 int Query(redisContext *c, const string &key, const double x1, const double x2,
-		  const double y1, const double y2, const string &startdate, const string &starttime,
-		  const string &enddate, const string &endtime, int n, ...);
+		  const double y1, const double y2, const string &startdatetime, 
+		  const string &enddatetime, int n, ...);
 
 int QueryByRadius(redisContext *c, const string &key,
 				  const double x, const double y, const double radius,
-				  const string &startdate, const string &starttime,
-				  const string &enddate, const string &endtime, int n, ...);
+				  const string &startdatetime, const string &enddatetime, int n, ...);
 
 int ObjectHistory(redisContext *c, const string &key, const long long object_id);
 
 
 int ObjectHistory2(redisContext *c, const string &key, const long long object_id,
-				   const string &d1, const string &t1, const string &d2, const string &t2);
+				   const string &t1, const string &td2);
 
 
 int TrackAll(redisContext *c, const string &key,
 			 const double x1, const double x2,
 			 const double y1, const double y2,
-			 const string &startdate, const string &starttime,
-			 const string &enddate, const string &endtime);
+			 const string &startdatetime, const string &enddatetime);
 
 
-int PurgeAllBefore(redisContext *c, const string &key, const string &date, const string &time);
+int PurgeAllBefore(redisContext *c, const string &key, const string &datetime);
 
 int DeleteBlock(redisContext *c, const string &key,
 				const double x1, const double x2, const double y1, const double y2,
-				const string &startdate, const string &starttime,
-				const string &enddate, const string &endtime);
+				const string &startdatetime, const string &enddatetime);
 
 
 int DeleteObject(redisContext *c, const string &key, const long long object_id);

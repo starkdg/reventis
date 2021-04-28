@@ -11,9 +11,8 @@ typedef struct entry_t {
 	long long object_id;
 	double longitude;
 	double latitude;
-	string date;
-	string starttime;
-	string endtime;
+	string startdatetime;
+	string enddatetime;
 	string descr;
 } Entry;
 
@@ -24,9 +23,15 @@ static int parse_event(string line, Entry &entry){
 	entry.latitude = atof(word.c_str());
 	getline(ss, word, ',');
 	entry.longitude = atof(word.c_str());
-	getline(ss, entry.date, ',');
-	getline(ss, entry.starttime, ',');
-	getline(ss, entry.endtime, ',');
+
+	string datestr, t1str, t2str;
+	getline(ss, datestr, ',');
+	getline(ss, t1str, ',');
+	getline(ss, t2str, ',');
+
+	entry.startdatetime = datestr + "T" + t1str;
+	entry.enddatetime = datestr + "T" + t2str;
+	
 	getline(ss, entry.descr);
 	return 0;
 }
@@ -38,10 +43,9 @@ int LoadEvents(redisContext *c, const string &key, const string &file){
 	for (string line; getline(input, line);){
 		Entry e;
 		parse_event(line, e);
-		redisReply *reply = (redisReply*)redisCommand(c, "reventis.insert %s %f %f %s %s %s %s %s",
+		redisReply *reply = (redisReply*)redisCommand(c, "reventis.insert %s %f %f %s %s %s",
 							 key.c_str(), e.longitude, e.latitude,
-										  e.date.c_str(), e.starttime.c_str(),
-										  e.date.c_str(), e.endtime.c_str(), e.descr.c_str());
+							 e.startdatetime.c_str(), e.enddatetime.c_str(), e.descr.c_str());
 
 		if (reply && reply->type == REDIS_REPLY_INTEGER){
 			count++;
@@ -60,13 +64,17 @@ static int parse_object(string line, Entry &entry){
 	string word;
 	stringstream ss(line);
 	getline(ss, word, ',');
-	entry.object_id = atoi(word.c_str());
+	entry.object_id = atoll(word.c_str());
 	getline(ss, word, ',');
 	entry.longitude = atof(word.c_str());
 	getline(ss, word, ',');
 	entry.latitude = atof(word.c_str());
-	getline(ss, entry.date, ',');
-	getline(ss, entry.starttime, ',');
+
+	string dt;
+	getline(ss, dt, ',');
+	entry.startdatetime = dt;
+	entry.enddatetime = dt;
+
 	getline(ss, entry.descr);
 	return 0;
 }
@@ -79,11 +87,16 @@ int LoadObjects(redisContext *c, const string &key, const string &file){
 	for (string line; getline(input, line);){
 		Entry e;
 		parse_object(line, e);
-		reply = (redisReply*)redisCommand(c, "reventis.update %s %f %f %s %s %ld %s",
+		reply = (redisReply*)redisCommand(c, "reventis.update %s %f %f %s %lld %s",
 										  key.c_str(), e.longitude, e.latitude,
-										  e.date.c_str(), e.starttime.c_str(), e.object_id, e.descr.c_str());
+										  e.startdatetime.c_str(),
+										  e.object_id,
+										  e.descr.c_str());
 		if (reply && reply->type == REDIS_REPLY_INTEGER){
 			count++;
+		} else if (reply && reply->type == REDIS_REPLY_ERROR){
+			throw runtime_error(reply->str);
+
 		} else {
 			throw runtime_error("bad reply");
 		}
@@ -97,13 +110,13 @@ int LoadObjects(redisContext *c, const string &key, const string &file){
 
 long long AddEvent(redisContext *c, const string &key,
 				   const double x, const double y,
-				   const string &startdate, const string &starttime,
-				   const string &enddate, const string &endtime, const string &descr){
+				   const string &startdatetime, const string &enddatetime,
+				   const string &descr){
 
-	redisReply *reply = (redisReply*)redisCommand(c, "reventis.insert %s %f %f %s %s %s %s %s",
+	redisReply *reply = (redisReply*)redisCommand(c, "reventis.insert %s %f %f %s %s %s",
 												  key.c_str(), x, y,
-												  startdate.c_str(), starttime.c_str(),
-												  enddate.c_str(), endtime.c_str(), descr.c_str());
+												  startdatetime.c_str(), enddatetime.c_str(),
+												  descr.c_str());
     long long id = 0;
 	if (reply && reply->type == REDIS_REPLY_INTEGER){
 	    id = reply->integer;
@@ -224,14 +237,13 @@ static int ProcessArrayReply(redisReply *reply){
 int Query(redisContext *c, const string &key,
 		  const double x1, const double x2,
 		  const double y1, const double y2,
-		  const string &startdate, const string &starttime,
-		  const string &enddate, const string &endtime, int n, ...){
+		  const string &startdatetime, 
+		  const string &enddatetime, int n, ...){
 
 	char cmd[256];
-	snprintf(cmd, 256, "reventis.query %s %f %f %f %f %s %s %s %s ",
+	snprintf(cmd, 256, "reventis.query %s %f %f %f %f %s %s",
 			 key.c_str(), x1, x2, y1, y2,
-			 startdate.c_str(), starttime.c_str(),
-			 enddate.c_str(), endtime.c_str());
+			 startdatetime.c_str(), enddatetime.c_str());
 
 	va_list ap;
 	va_start(ap, n);
@@ -251,12 +263,11 @@ int Query(redisContext *c, const string &key,
 
 int QueryByRadius(redisContext *c, const string &key,
 				  const double x, const double y, const double radius,
-				  const string &startdate, const string &starttime,
-				  const string &enddate, const string &endtime, int n, ...){
+				  const string &startdatetime, 
+				  const string &enddatetime, int n, ...){
 	char cmd[256];
-	snprintf(cmd, 256, "reventis.queryradius %s %f %f %f %s %s %s %s %s ",
-			 key.c_str(), x, y, radius, "km", startdate.c_str(), starttime.c_str(),
-			 enddate.c_str(), endtime.c_str());
+	snprintf(cmd, 256, "reventis.queryradius %s %f %f %f %s %s %s",
+			 key.c_str(), x, y, radius, "km", startdatetime.c_str(), enddatetime.c_str());
 	va_list ap;
 	va_start(ap, n);
 	for (int i=0;i<n;i++){
@@ -284,12 +295,12 @@ int ObjectHistory(redisContext *c, const string &key, const long long object_id)
 }
 
 int ObjectHistory2(redisContext *c, const string &key, const long long object_id,
-				  const string &d1, const string &t1, const string &d2, const string &t2){
+				  const string &t1, const string &t2){
 
-	redisReply *reply = (redisReply*)redisCommand(c, "reventis.hist %s %lld %s %s %s %s",
+	redisReply *reply = (redisReply*)redisCommand(c, "reventis.hist %s %lld %s %s",
 												  key.c_str(), object_id,
-												  d1.c_str(), t1.c_str(),
-												  d2.c_str(), t2.c_str());
+												  t1.c_str(), t2.c_str());
+												 
 	int count = ProcessArrayReply(reply);
 	cout <<  "  (" << count << " objects)" << endl;
 	freeReplyObject(reply);
@@ -299,13 +310,11 @@ int ObjectHistory2(redisContext *c, const string &key, const long long object_id
 int TrackAll(redisContext *c, const string &key,
 			 const double x1, const double x2,
 			 const double y1, const double y2,
-			 const string &startdate, const string &starttime,
-			 const string &enddate, const string &endtime){
+			 const string &startdatetime, const string &enddatetime){
 	
-	redisReply *reply = (redisReply*)redisCommand(c, "reventis.trackall %s %f %f %f %f %s %s %s %s",
+	redisReply *reply = (redisReply*)redisCommand(c, "reventis.trackall %s %f %f %f %f %s %s",
 												  key.c_str(), x1, x2, y1, y2,
-												  startdate.c_str(), starttime.c_str(),
-												  enddate.c_str(), endtime.c_str());
+												  startdatetime.c_str(), enddatetime.c_str());
 	int count = ProcessArrayReply(reply);
 	cout << "  (" << count << " objects)" << endl;
 	freeReplyObject(reply);
@@ -313,10 +322,10 @@ int TrackAll(redisContext *c, const string &key,
 }
 
 
-int PurgeAllBefore(redisContext *c, const string &key, const string &date, const string &time){
+int PurgeAllBefore(redisContext *c, const string &key, const string &datetime){
 
-	redisReply *reply = (redisReply*)redisCommand(c, "reventis.purge %s %s %s",
-												  key.c_str(), date.c_str(), time.c_str());
+	redisReply *reply = (redisReply*)redisCommand(c, "reventis.purge %s %s",
+												  key.c_str(), datetime.c_str());
 	int count = -1;
 	if (reply == NULL || reply->type != REDIS_REPLY_INTEGER){
 		throw runtime_error("bad reply");
@@ -328,13 +337,11 @@ int PurgeAllBefore(redisContext *c, const string &key, const string &date, const
 
 int DeleteBlock(redisContext *c, const string &key,
 				const double x1, const double x2, const double y1, const double y2,
-				const string &startdate, const string &starttime,
-				const string &enddate, const string &endtime){
+				const string &startdatetime, const string &enddatetime){
 
-	redisReply *reply = (redisReply*)redisCommand(c, "reventis.delblk %s %f %f %f %f %s %s %s %s",
+	redisReply *reply = (redisReply*)redisCommand(c, "reventis.delblk %s %f %f %f %f %s %s",
 												  key.c_str(), x1, x2, y1, y2,
-												  startdate.c_str(), starttime.c_str(),
-												  enddate.c_str(), endtime.c_str());
+												  startdatetime.c_str(), enddatetime.c_str());
 	int count;
 	if (reply == NULL || reply->type != REDIS_REPLY_INTEGER){
 		throw runtime_error("bad reply");

@@ -49,15 +49,19 @@ of indexed events within the query region.
 
 ## Module Commands
 
+UPDATE: v0.5.0 updated commands to accept the ISO 8601 datetime formats, e.g. YYYY-MM-DDTHH:MM[:SS].
+The seconds field is optional.  This combines the date and time fields to shorten some of the
+argument lists.  
+
 Reventis implements the following commands to insert, delete, query and otherwise
 interact with the index.  All mostly self-explanatory and discussed below.
 
 ```
-reventis.insert key longitude latitude date-start time-start date-end time-end descr [id]
+reventis.insert key longitude latitude datetime-start datetime-end descr [id]
 ```
 
-Insert an event as defined by longitude, latititude and time duration.  Dates and times
-are denoted in the form MM-DD-YYYY HH:MM[:SS].  `descr` is a descriptive string for the
+Insert an event as defined by longitude, latititude and time duration.  Datetimes
+are denoted in the iso form YYYY-MM-DDTHH:MM[:SS].  `descr` is a descriptive string for the
 event and is inserted into the keyspace, `key:<id>` under the hashfield marked "descr".
 An optional id integer can be provide. If not provided, one is assigned and returned by the
 command.  User can store additional information for the event in the `key:<id>` keyspace by
@@ -71,7 +75,7 @@ Delete id from the index of the specified keyspace.  Return simple string acknow
 Complexity is O(log(N)), where N is the number of indexed events.
 
 ```
-reventis.purge key date time
+reventis.purge key datetime
 ```
 
 Delete all events on or before denoted datetime.  Return the number of deleted events.
@@ -90,7 +94,7 @@ deleted events.  Complexity varies widely but is roughly on the order of O(Klog(
 where K is the number of events found to delete, and N is the total number of indexed events. 
 
 ```
-reventis.delblkradius key longitude latitude radius [mi|km|ft|m] date-start time-start date-end time-end [category ...]
+reventis.delblkradius key longitude latitude radius [mi|km|ft|m] datetime-start datetime-end [category ...]
 ```
 
 Same as above.  Deletes a blog of events that fall within a given radius from a geospatial point. 
@@ -117,14 +121,14 @@ reventis.query key x1 x2 y1 y2 t1 t2 [cat ...]
 
 Query the index for all the elements in a given range.  The longitude range is given by x1 to
 x2. The latitude range is given by y1 to y2.  The timespan is given by t1 to t2, where both
-are provided in the form MM-DD-YYYY HH:MM[:SS].  The command returns the results in the form
+are provided in the iso timestamp form YYY-MM-DDTHH:MM[:SS].  The command returns the results in the form
 of an array of arrays.  Each inner array being [descr, id, longitude, latitude, time1, time2].
 Complexity varies widely, but is roughly on the order of O(Klog(N)), where K is the number of
 retrieved results, and N is the number of indexed events.
 
 
 ```
-reventis.querybyradius key longitude latitude radius mi|km|ft|m date-start time-start date-end time-end [cat_id ...]
+reventis.querybyradius key longitude latitude radius mi|km|ft|m datetime-start datetime-end [cat_id ...]
 ```
 
 Query the index for all elements within a given radius.  Radius units are specified in the next
@@ -170,11 +174,11 @@ restrict the query to certain time limits.  An entire history of objects can be 
 data structure.  
 
 ```
-reventis.update key longitude latitude date time  object_id descr [id]
+reventis.update key longitude latitude datetime  object_id descr [id]
 ```
 
-Update an object with another event.  Date and time are provided in the form MM-DD-YYYY
-and HH:MM[:SS].  The `descr` string is a descriptive string.  A unique event id will
+Update an object with another event.  Date and time are provided in the form YYY-MM-DDTHH:MM[:SS].
+  The `descr` string is a descriptive string.  A unique event id will
 be assigned by the module.  This is the normal expected use, but an id can be optionally provided.
 Comlexity is on the order of O(log(N)), where N is the number of indexed events. 
 
@@ -213,8 +217,8 @@ reventis.hist key object_id [t1 t2]
 ```
 
 Return all events for a given object - optionally over a given time period. Time period is
-given by t1 to t2 in the form of MM-DD-YYYY HH:MM[:SS].  Results are returned in an array
-of arrays.  Each inner array composed of
+given by t1 to t2 in the iso timestamp form of YYYY-MM-DDTHH:MM[:SS].  Results are returned in
+an array of arrays.  Each inner array composed of
 [descr, event_id, object_id, longitude, latitude, datetime].
 Complexity is on the order of O(K), where K is the number of events for the object.
 
@@ -287,14 +291,14 @@ in the redis-server.
 Then you can do interesting queries on the data.  For example,
 
 ```
-reventis.query <key> -72.723574 -72.641509 41.722626 41.809872 06-01-2016 00:00 07-01-2016 00:00
+reventis.query <key> -72.723574 -72.641509 41.722626 41.809872 2016-06-01T00:00 2016-07-01T00:00
 ```
 
 will get all events recorded in the Hartford, Ct area for the month of June in 2016.
 
 
 ```
-reventis.query <key> -72.723574 -72.641509 41.722626 41.809872 06-01-2016 00:00 07-01-2016 00:00 14
+reventis.query <key> -72.723574 -72.641509 41.722626 41.809872 2016-06-01T00:00 2016-07-01T00:00 14
 ```
 
 will get all events in Hartford, CT area for month of June in 2016 recorded as "protest" events.

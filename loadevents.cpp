@@ -74,10 +74,9 @@ int genlonglat(double &x, double &y){
 	return 0;
 }
 
-int gentimes(string &startdate, string &starttime, string &enddate, string &endtime){
+int gentimes(string &startdatetime, string &enddatetime){
 
-	const char *date_fmt = "%m-%d-%Y";
-	const char *time_fmt = "%H:%M";
+	const char *datetime_fmt = "%Y-%m-%dT%H:%M:00";
 	char buffer[64];
 	
 	time_t t1, t2;
@@ -97,17 +96,11 @@ int gentimes(string &startdate, string &starttime, string &enddate, string &endt
 	unsigned int dur = dur_distr(gen);
 	t2 = t1 + (time_t)dur;
 
-	strftime(buffer, 64, date_fmt, localtime(&t1));
-	startdate = string(buffer);
+	strftime(buffer, 64, datetime_fmt, gmtime(&t1));
+	startdatetime = string(buffer);
 
-	strftime(buffer, 64, time_fmt, localtime(&t1));
-	starttime = string(buffer);
-
-	strftime(buffer, 64, date_fmt, localtime(&t2));
-	enddate = string(buffer);
-
-	strftime(buffer, 64, time_fmt, localtime(&t2));
-	endtime = string(buffer);
+	strftime(buffer, 64, datetime_fmt, gmtime(&t2));
+	enddatetime = string(buffer);
 
 	if (t2 < t1) return -1;
 	
@@ -117,22 +110,25 @@ int gentimes(string &startdate, string &starttime, string &enddate, string &endt
 int GenerateEvents(redisContext *c, const string &key, const int n){
 	int count = 0;
 	redisReply *reply = NULL;
-	const char *cmd_fmt = "reventis.insert %s %f %f %s %s %s %s %s";
+	const char *cmd_fmt = "reventis.insert %s %f %f %s %s %s";
 	
 	while (count < n){
 		double x,  y;
 		genlonglat(x, y);
 
-		string d1, t1, d2, t2;
-		if (gentimes(d1, t1, d2, t2) < 0)
+		string dt1, dt2;
+		if (gentimes(dt1, dt2) < 0)
 			continue;
 
 		long long tag_num = id_distr(gen);
 		
 		string descr = "\"Event ID # " + to_string(tag_num) + "\"";
 
-		reply = (redisReply*)redisCommand(c, cmd_fmt, key.c_str(), x, y, d1.c_str(), t1.c_str(),
-										  d2.c_str(), t2.c_str(), descr.c_str());
+		reply = (redisReply*)redisCommand(c, cmd_fmt,
+										  key.c_str(),
+										  x, y,
+										  dt1.c_str(), dt2.c_str(),
+										  descr.c_str());
 
 		if (reply && reply->type == REDIS_REPLY_INTEGER){
 			count++;
@@ -155,9 +151,8 @@ typedef struct entry_t {
 	long long object_id;
 	double longitude;
 	double latitude;
-	string date;
-	string starttime;
-	string endtime;
+	string startdatetime;
+	string enddatetime;
 	string descr;
 } Entry;
 
@@ -168,10 +163,15 @@ int parse_event(string line, Entry &entry){
 	entry.latitude = atof(word.c_str());
 	getline(ss, word, ',');
 	entry.longitude = atof(word.c_str());
-	getline(ss, entry.date, ',');
-	getline(ss, entry.starttime, ',');
-	getline(ss, entry.endtime, ',');
-	getline(ss, entry.descr);
+
+	string datestr, startstr, endstr;
+	getline(ss, datestr, ',');
+	getline(ss, startstr, ',');
+	getline(ss, endstr, ',');
+	entry.startdatetime = datestr + "T" + startstr;
+	entry.enddatetime = datestr + "T" + endstr;
+	entry.object_id = 0;
+	
 	return 0;
 }
 
@@ -184,16 +184,18 @@ int parse_object(string line, Entry &entry){
 	entry.longitude = atof(word.c_str());
 	getline(ss, word, ',');
 	entry.latitude = atof(word.c_str());
-	getline(ss, entry.date, ',');
-	getline(ss, entry.starttime, ',');
-	getline(ss, entry.descr);
+	getline(ss, word, ',');
+	entry.startdatetime = word;
+	entry.enddatetime = word;
+	getline(ss, word, ',');
+	entry.descr = word;
 	return 0;
 }
 
 int LoadEvents(redisContext *c, const string &key, const string &file){
 	ifstream input(file);
 	redisReply *reply;
-	const char *cmd_fmt = "reventis.insert %s %f %f %s %s %s %s %s";
+	const char *cmd_fmt = "reventis.insert %s %f %f %s %s %s";
 
 	char cmd[128];
 	int count = 0;
@@ -202,15 +204,12 @@ int LoadEvents(redisContext *c, const string &key, const string &file){
 		parse_event(line, e);
 
 		snprintf(cmd, 128, cmd_fmt, key.c_str(), e.longitude, e.latitude,
-				 e.date.c_str(), e.starttime.c_str(),
-				 e.date.c_str(), e.endtime.c_str(),
-				 e.descr.c_str());
+				 e.startdatetime.c_str(), e.enddatetime.c_str(), e.descr.c_str());
 
 		cout << "send => " << cmd << endl;
 		reply = (redisReply*)redisCommand(c, cmd_fmt, key.c_str(),
 										  e.longitude, e.latitude,
-										  e.date.c_str(), e.starttime.c_str(),
-										  e.date.c_str(), e.endtime.c_str(),
+										  e.startdatetime.c_str(), e.enddatetime.c_str(),
 										  e.descr.c_str());
 
 		if (reply && reply->type == REDIS_REPLY_INTEGER){
@@ -234,7 +233,7 @@ int LoadEvents(redisContext *c, const string &key, const string &file){
 int LoadObjects(redisContext *c, const string &key, const string &file){
 	ifstream input(file);
 	redisReply *reply;
-	const char *cmd_fmt = "reventis.update %s %f %f %s %s %ld %s";
+	const char *cmd_fmt = "reventis.update %s %f %f %s %ld %s";
 	
 	char cmd[128];
 	int count = 0;
@@ -243,12 +242,11 @@ int LoadObjects(redisContext *c, const string &key, const string &file){
 		parse_object(line, e);
 
 		snprintf(cmd, 128, cmd_fmt, key.c_str(), e.longitude, e.latitude,
-				 e.date.c_str(), e.starttime.c_str(), e.object_id, e.descr.c_str());
+				 e.startdatetime.c_str(), e.object_id, e.descr.c_str());
 
 		cout << "send => " << cmd << endl;
 		reply = (redisReply*)redisCommand(c, cmd_fmt, key.c_str(), e.longitude, e.latitude,
-										  e.date.c_str(), e.starttime.c_str(),
-										  e.object_id, e.descr.c_str());
+										  e.startdatetime.c_str(), e.object_id, e.descr.c_str());
 		
 		if (reply && reply->type == REDIS_REPLY_INTEGER){
 			count++;

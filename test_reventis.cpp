@@ -38,17 +38,16 @@ void TestAddObjects(redisContext *c, const string &key){
 }
 
 void TestQuery(redisContext *c, const string &key){
-	string datestr, enddatestr, starttime, endtime;
+	string startdatetime, enddatetime;
 	
 	/* query first cluster */
 	double x1 = -72.338000;
 	double x2 = -72.330000;
 	double y1 = 41.571000;
 	double y2 = 41.576000;
-	datestr = "12-01-2019";
-	starttime = "12:00";
-	endtime = "16:00";
-	int n = Query(c, key, x1, x2, y1, y2, datestr, starttime, datestr, endtime, 0);
+	startdatetime = "2019-12-01T12:00";
+	enddatetime = "2019-12-01T16:00";
+	int n = Query(c, key, x1, x2, y1, y2, startdatetime, enddatetime, 0);
 	assert(n == 3);
 
 	/* second cluster */
@@ -56,10 +55,9 @@ void TestQuery(redisContext *c, const string &key){
 	x2 = -72.217520;
 	y1 = 41.719640;
 	y2 = 41.720690;
-	datestr = "10-09-2019";
-	starttime = "12:00";
-	endtime = "18:00";
-	n = Query(c, key, x1, x2, y1, y2, datestr, starttime, datestr, endtime, 0);
+	startdatetime = "2019-10-09T12:00";
+	enddatetime = "2019-10-09T18:00";
+	n = Query(c, key, x1, x2, y1, y2, startdatetime, enddatetime, 0);
 	assert(n == 4);
 
 	/* third cluster */
@@ -67,10 +65,9 @@ void TestQuery(redisContext *c, const string &key){
 	x2 = -72.248800;
 	y1 = 41.806490;
 	y2 = 41.809360;
-	datestr = "12-04-2019";
-	starttime = "9:00";
-	endtime = "18:00";
-	n = Query(c, key, x1, x2, y1, y2, datestr, starttime, datestr, endtime, 0);
+	startdatetime = "2019-12-04T9:00";
+	enddatetime = "2019-12-04T18:00";
+	n = Query(c, key, x1, x2, y1, y2, startdatetime, enddatetime, 0);
 	assert(n == 6);
 
 	/* fourth cluster */
@@ -78,87 +75,74 @@ void TestQuery(redisContext *c, const string &key){
 	x2 = -93.712109;
 	y1 = 27.336248;
 	y2 = 36.416949;
-	datestr = "01-01-2019";
-	starttime = "12:00";
-	enddatestr = "01-01-2020";
-	endtime = "12:00";
-	n = Query(c, key, x1, x2, y1, y2, datestr, starttime, enddatestr, endtime, 0);
+	startdatetime = "2019-01-01T12:00";
+	enddatetime = "2020-01-01T12:00";
+	n = Query(c, key, x1, x2, y1, y2, startdatetime, enddatetime, 0);
 	assert(n == 11);
 
 }
 
 void TestQueryByRadius(redisContext *c, const string &key){
 	double x = -72.334000, y =  41.5735, radius = 2.0;
-	string startdatestr = "12-01-2019";
-	string starttimestr = "12:00";
-	string enddatestr = "12-01-2019";
-	string endtimestr = "16:00";
-	int n = QueryByRadius(c, key, x, y, radius, startdatestr, starttimestr, enddatestr, endtimestr, 0);
+	string startdatetime = "2019-12-01T12:00";
+	string enddatetime = "2019-12-01T16:00";
+	int n = QueryByRadius(c, key, x, y, radius, startdatetime, enddatetime, 0);
 	assert(n == 3);
 
 	x = -72.218167;
 	y = 41.720165;
-	startdatestr = "10-09-2019";
-	enddatestr = "10-09-2019";
-	starttimestr = "12:00";
-	endtimestr = "18:00";
+	startdatetime = "2019-10-09T12:00";
+	enddatetime = "2019-10-09T18:00";
 	radius = 2.0;
-	n = QueryByRadius(c, key, x, y, radius, startdatestr, starttimestr, enddatestr, endtimestr, 0);
+	n = QueryByRadius(c, key, x, y, radius, startdatetime, enddatetime, 0);
 	assert(n == 4);
 
 	x = -72.253100;
 	y = 41.807925;
-	startdatestr = "12-04-2019";
-	enddatestr = "12-04-2019";
-	starttimestr = "9:00";
-	endtimestr = "18:00";
+	startdatetime = "2019-12-04T9:00";
+	enddatetime = "2019-12-04T18:00";
 	radius = 10.0;
-	n = QueryByRadius(c, key, x, y, radius, startdatestr, starttimestr, enddatestr, endtimestr, 0);
+	n = QueryByRadius(c, key, x, y, radius, startdatetime, enddatetime, 0);
 	assert(n == 6);
 
 	x = -100.112797;
 	y = 31.876599;
-	startdatestr = "01-01-2019";
-	enddatestr = "01-01-2020";
-	starttimestr = "12:00";
-	endtimestr = "12:00";
+	startdatetime = "2019-01-01T12:00";
+	enddatetime = "2020-01-01T12:00";
 	radius = 400;
-	n = QueryByRadius(c, key, x, y, radius, startdatestr, starttimestr, enddatestr, endtimestr, 0);
+	n = QueryByRadius(c, key, x, y, radius, startdatetime, enddatetime, 0);
 	assert(n == 11);
 }
 
 void TestAddEventsCategoriesAndQuery(redisContext *c, const string &key){
 	double x = -97.797586;
 	double y = 30.318388;
-	string datestr = "05-25-2019";
-	string startstr = "13:00";
-	string endstr  =  "13:30";
+	string startdatetime = "2019-05-25T13:00";
+	string enddatetime = "2019-05-25T13:30";
 	string descr = "class 10";
-	long long id1 = AddEvent(c, key, x, y, datestr, startstr, datestr, endstr, descr);
+	long long id1 = AddEvent(c, key, x, y, startdatetime, enddatetime, descr);
 
 	AddCategory(c, key, id1, 1, 10);
 
 
 	x = -97.715113;
 	y = 30.333895;
-	datestr = "05-01-2019";
-	startstr = "14:30";
-	endstr = "14:45";
+	startdatetime = "2019-05-01T14:30";
+	enddatetime = "2019-05-01T14:45";
 	descr = "class 10, 20";
 
-	long long id2 = AddEvent(c, key, x, y, datestr, startstr, datestr, endstr, descr);
+	long long id2 = AddEvent(c, key, x, y, startdatetime, enddatetime, descr);
 
 	AddCategory(c, key, id2, 2, 10, 20);
 
 
 	x = -97.816367;
 	y = 30.206953;
-	datestr = "04-01-2019";
-	startstr = "23:00";
-	endstr = "23:05";
+	startdatetime = "2019-04-01T23:00";
+	enddatetime = "2019-04-01T23:05";
 	descr = "class 10, 20, 30";
 
-	long long id3 = AddEvent(c, key, x, y, datestr, startstr, datestr, endstr, descr);
+	long long id3 = AddEvent(c, key, x, y, startdatetime, enddatetime, descr);
 
 	AddCategory(c, key, id3, 3, 10, 20, 30);
 
@@ -167,24 +151,23 @@ void TestAddEventsCategoriesAndQuery(redisContext *c, const string &key){
 	double x2 = -93.712109;
 	double y1 = 27.336248;
 	double y2 = 36.416949;
-	string startdatestr = "03-25-2019";
-	string starttimestr = "12:00";
-	string enddatestr = "06-01-2019";
-	string endtimestr = "12:00";
+
+	startdatetime = "2019-03-25T12:00";
+	enddatetime = "2019-06-01T12:00";
 	
 	int n;
-	n = Query(c, key, x1, x2, y1, y2, startdatestr, starttimestr, enddatestr, endtimestr, 1, 10);
+	n = Query(c, key, x1, x2, y1, y2, startdatetime, enddatetime, 1, 10);
 	assert(n == 3);
 	
-	n = Query(c, key, x1, x2, y1, y2, startdatestr, starttimestr, enddatestr, endtimestr, 1, 20);
+	n = Query(c, key, x1, x2, y1, y2, startdatetime, enddatetime, 1, 20);
 	assert(n == 2);
 
-	n = Query(c, key, x1, x2, y1, y2, startdatestr, starttimestr, enddatestr, endtimestr, 1, 30);
+	n = Query(c, key, x1, x2, y1, y2, startdatetime, enddatetime, 1, 30);
 	assert(n == 1);
 
 	RemoveCategory(c, key, id3, 3, 10, 20, 30);
 
-	n = Query(c, key, x1, x2,  y1, y2, startdatestr, starttimestr, enddatestr, endtimestr, 1, 10);
+	n = Query(c, key, x1, x2,  y1, y2, startdatetime, enddatetime, 1, 10);
 	assert(n == 2);
 
 	cout << "delete id1 " << id1 << endl;
@@ -197,14 +180,13 @@ void TestAddEventsCategoriesAndQuery(redisContext *c, const string &key){
 	DeleteEvent(c, key, id3);
 
 	cout << "query" << endl;
-	n = Query(c, key, x1, x2, y1, y2, startdatestr, starttimestr, enddatestr, endtimestr, 3, 10, 20, 30);
+	n = Query(c, key, x1, x2, y1, y2, startdatetime, enddatetime, 3, 10, 20, 30);
 	assert(n == 0);
 }
 
 void TestPurge(redisContext *c, const string &key){
-	string datestr = "07-04-2019";
-	string starttime = "12:00";
-	int n = PurgeAllBefore(c, key, datestr, starttime);
+	string datetimestr = "2019-07-04T12:00";
+	int n = PurgeAllBefore(c, key, datetimestr);
 	cout << "purged " << n << endl;
 	assert(n == 25);
 }
@@ -239,23 +221,19 @@ void TestObjectHistory(redisContext *c, const string &key){
 void TestPartialObjectHistory(redisContext *c, const string &key){
 
 	/* partial object histories */
-	string datestr = "05-21-2019", enddatestr;
-	string starttime = "12:00";
-	string endtime = "15:30";
-	int n = ObjectHistory2(c, key, 150,  datestr, starttime, datestr, endtime);
+	string startdatetime = "2019-05-21T12:00";
+	string enddatetime = "2019-05-21T15:30";
+	int n = ObjectHistory2(c, key, 150,  startdatetime, enddatetime);
 	assert(n == 3);
 
-	datestr = "08-02-2019";
-	starttime = "09:00";
-	endtime = "10:15";
-	n = ObjectHistory2(c, key, 10, datestr, starttime, datestr, endtime);
+	startdatetime = "2019-08-02T09:00";
+	enddatetime = "2019-08-02T10:15";
+	n = ObjectHistory2(c, key, 10, startdatetime, enddatetime);
 	assert(n == 6);
 
-	datestr = "08-30-2019";
-	starttime = "13:00";
-	enddatestr = "09-01-2019";
-	endtime = "08:00";
-	n = ObjectHistory2(c, key, 80, datestr, starttime, enddatestr, endtime);
+	startdatetime = "2019-08-30T13:00";
+	enddatetime = "2019-01-01T08:00";
+	n = ObjectHistory2(c, key, 80, startdatetime, enddatetime);
 	assert(n == 1);
 }
 
@@ -270,10 +248,9 @@ void TestDeleteObjects(redisContext *c, const string &key){
 void TestTrackAll(redisContext *c, const string &key){
 	double x1 = -74.00000, x2 = -73.990001;
 	double y1 = 40.710000, y2 = 40.730000;
-	string datestr = "08-02-2019";
-	string starttimestr = "09:00";
-	string endtimestr = "17:30";
-	int n = TrackAll(c, key, x1, x2, y1, y2, datestr, starttimestr, datestr, endtimestr);
+	string startdatetime = "2019-08-02T09:00";
+	string enddatetime = "2019-08-02T17:30";
+	int n = TrackAll(c, key, x1, x2, y1, y2, startdatetime, enddatetime);
 	assert(n == 1);
 }
 
@@ -318,7 +295,6 @@ int main(int argc, char **argv){
 
 	cout << "Delete Key" << endl;
 	DeleteKey(c, key);
-	
 	
 	cout << "Done" << endl;
 	redisFree(c);

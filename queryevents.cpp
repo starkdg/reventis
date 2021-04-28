@@ -61,14 +61,13 @@ void ProcessReply(redisContext *c, redisReply *reply, int &count){
 int Query(redisContext *c, const string &key,
 		  const double x1, const double x2,
 		  const double y1, const double y2,
-		  const string &startdate, const string &starttime,
-		  const string &enddate, const string &endtime, int n, ...){
+		  const string &startdatetime, const string &enddatetime,
+		  int n, ...){
 
 	char cmd[256];
-	snprintf(cmd, 256, "reventis.query %s %f %f %f %f %s %s %s %s ",
+	snprintf(cmd, 256, "reventis.query %s %f %f %f %f %s %s",
 			 key.c_str(), x1, x2, y1, y2,
-			 startdate.c_str(), starttime.c_str(),
-			 enddate.c_str(), endtime.c_str());
+			 startdatetime.c_str(), enddatetime.c_str());
 
 	va_list ap;
 	va_start(ap, n);
@@ -111,12 +110,10 @@ int main(int argc, char **argv){
 	const double x2 = atof(argv[3]);
 	const double y1 = atof(argv[4]);
 	const double y2 = atof(argv[5]);
-	const string startdate = argv[6];
-	const string starttime = argv[7];
-	const string enddate = argv[8];
-	const string endtime = argv[9];
+	const string startdatetime = argv[6];
+	const string enddatetime = argv[7];
 
-	int n = Query(c, key, x1, x2, y1, y2, startdate, starttime, enddate, endtime, 0);
+	int n = Query(c, key, x1, x2, y1, y2, startdatetime, enddatetime, 0);
 	cout << "items found: " << n << endl;
 	cout << "done." << endl;
 

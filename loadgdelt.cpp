@@ -151,7 +151,7 @@ int parse_gdeltv2_event(string &line, Entry &e){
 	tm dt = {};
 	datestr >> get_time(&dt, "%Y%m%d%H%M%S");
 	e.timestamp = mktime(&dt);
-	
+
 	getline(ss, word, '\t');
 	e.source_url = word;
 	
@@ -162,29 +162,27 @@ int LoadGdelEvents(redisContext *c, const string &key, const string &file){
 	ifstream input(file);
 
 	redisReply *reply;
-	const char *cmd_fmt = "reventis.insert %s %f %f %s %s %s %s %s";
+	const char *cmd_fmt = "reventis.insert %s %f %f %s %s %s";
 	const char *cmd_fmt2 = "reventis.addcategory %s %ld %d";
 	
 	char cmd[512];
-	char datestr[32];
-	char timestr[32];
+	char datetimestr[32];
 	long long count = 0;
 	for (string line; getline(input, line);){
 		Entry e;
 		if (parse_gdeltv2_event(line, e) == 0){
-			strftime(datestr, 32, "%m-%d-%Y", gmtime(&e.timestamp));
-			strftime(timestr, 32, "%H:%M:%S", gmtime(&e.timestamp));
+			strftime(datetimestr, 32, "%Y-%m-%dT%H:%M:%S", localtime(&e.timestamp));
 
 			string descr = "id = " + to_string(e.id) + " event = " + e.eventcode
 				+ " action = " + e.action + " gscale = " +  to_string(e.gscale) +
 				" tone = " + to_string(e.avg_tone) + " " + e.source_url;
 			
 			snprintf(cmd, 512, cmd_fmt, key.c_str(), e.longitude, e.latitude,
-					 datestr, timestr, datestr, timestr, descr.c_str());
+					 datetimestr, datetimestr, descr.c_str());
 			
 			cout << "send => " << cmd << endl;
 			reply = (redisReply*)redisCommand(c, cmd_fmt, key.c_str(), e.longitude, e.latitude,
-											  datestr, timestr, datestr, timestr, descr.c_str());
+											  datetimestr, datetimestr, descr.c_str());
 			long long event_id;
 			if (reply && reply->type == REDIS_REPLY_INTEGER){
 				count++;
